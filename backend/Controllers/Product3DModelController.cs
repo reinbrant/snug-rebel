@@ -85,7 +85,7 @@ public class Product3DModelController : ControllerBase
     {
         try
         {
-            var productId = HttpContext.Request.Form["productId"];
+            var productId = HttpContext.Request.Form["productId"].ToString();
             var modelName = HttpContext.Request.Form["modelName"].ToString();
             var modelFile = HttpContext.Request.Form.Files.GetFile("modelFile");
             var previewFile = HttpContext.Request.Form.Files.GetFile("previewFile");
@@ -132,7 +132,7 @@ public class Product3DModelController : ControllerBase
                 FkProductId = productId,
                 ModelUrl = modelUrl,
                 PreviewImageUrl = previewImageUrl,
-                ModelName = string.IsNullOrEmpty(modelName) ? Path.GetFileNameWithoutExtension(modelFile.FileName) : modelName,
+                ModelName = !string.IsNullOrEmpty(modelName) ? modelName : Path.GetFileNameWithoutExtension(modelFile.FileName),
                 FileSizeBytes = fileSizeBytes,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,

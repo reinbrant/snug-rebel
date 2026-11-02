@@ -21,7 +21,7 @@ public class CloudinaryService
         _cloudinary = new Cloudinary(account);
     }
 
-    public async Task<(string url, long fileSize)> UploadFile(Stream fileStream, string fileName, string folder, string? resourceType = null)
+    public async Task<(string url, long fileSize)> Upload3DModel(Stream fileStream, string fileName, string folder)
     {
         try
         {
@@ -30,8 +30,7 @@ public class CloudinaryService
                 File = new FileDescription(fileName, fileStream),
                 Folder = folder,
                 UseFilename = true,
-                UniqueFilename = true,
-                ResourceType = resourceType ?? "auto"
+                UniqueFilename = true
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -45,18 +44,35 @@ public class CloudinaryService
         }
         catch (Exception ex)
         {
-            throw new Exception($"File upload error: {ex.Message}", ex);
+            throw new Exception($"3D model upload error: {ex.Message}", ex);
         }
-    }
-
-    public async Task<(string url, long fileSize)> Upload3DModel(Stream fileStream, string fileName, string folder)
-    {
-        return await UploadFile(fileStream, fileName, folder, "raw");
     }
 
     public async Task<(string url, long fileSize)> UploadPreviewImage(Stream fileStream, string fileName, string folder)
     {
-        return await UploadFile(fileStream, fileName, folder, "image");
+        try
+        {
+            var uploadParams = new ImageUploadParams()
+            {
+                File = new FileDescription(fileName, fileStream),
+                Folder = folder,
+                UseFilename = true,
+                UniqueFilename = true
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.Error != null)
+            {
+                throw new Exception($"Cloudinary upload failed: {uploadResult.Error.Message}");
+            }
+
+            return (uploadResult.SecureUrl.ToString(), uploadResult.Bytes);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Preview image upload error: {ex.Message}", ex);
+        }
     }
 
     public async Task<bool> DeleteFile(string publicId)
