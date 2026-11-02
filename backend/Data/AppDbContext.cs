@@ -46,6 +46,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Product> Products { get; set; }
 
+    public virtual DbSet<Product3DModel> Product3DModels { get; set; }
+
     public virtual DbSet<ProductImage> ProductImages { get; set; }
 
     public virtual DbSet<ProductVariant> ProductVariants { get; set; }
@@ -625,6 +627,49 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.FkVariant).WithMany(p => p.ProductImages)
                 .HasForeignKey(d => d.FkVariantId)
                 .HasConstraintName("product_images__fk_variant_id_fkey");
+        });
+
+        modelBuilder.Entity<Product3DModel>(entity =>
+        {
+            entity.HasKey(e => e.PkProduct3DModelId).HasName("product_3d_models_pkey");
+
+            entity.ToTable("product_3d_models");
+
+            entity.HasIndex(e => e.FkProductId, "idx_product_id_3d_models");
+
+            entity.Property(e => e.PkProduct3DModelId)
+                .HasMaxLength(40)
+                .HasDefaultValueSql("('m3d'::text || (gen_random_uuid())::text)")
+                .HasColumnName("_pk_product_3d_model_id");
+            entity.Property(e => e.FkProductId)
+                .HasMaxLength(40)
+                .HasColumnName("_fk_product_id");
+            entity.Property(e => e.ModelUrl)
+                .HasMaxLength(500)
+                .HasColumnName("model_url");
+            entity.Property(e => e.PreviewImageUrl)
+                .HasMaxLength(500)
+                .HasColumnName("preview_image_url");
+            entity.Property(e => e.ModelName)
+                .HasMaxLength(255)
+                .HasColumnName("model_name");
+            entity.Property(e => e.FileSizeBytes).HasColumnName("file_size_bytes");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.FkProduct).WithMany(p => p.Product3DModels)
+                .HasForeignKey(d => d.FkProductId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("product_3d_models__fk_product_id_fkey");
         });
 
         modelBuilder.Entity<ProductVariant>(entity =>

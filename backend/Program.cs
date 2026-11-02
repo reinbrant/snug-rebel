@@ -1,7 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using backend.Data;
-using backend.Models; 
+using backend.Models;
+using backend.Services;
 using Scalar.AspNetCore;
 using System.Text.Json.Serialization;
 
@@ -17,6 +18,7 @@ builder.Services.AddProblemDetails();   // consistent error shape (from the stan
 builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();          // built-in OpenAPI document
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<CloudinaryService>();
 
 // Lets the React dev server (Vite) call the API. Override in appsettings per environment.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()

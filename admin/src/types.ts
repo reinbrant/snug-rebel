@@ -23,6 +23,18 @@ export type ProductVariantItem = {
   isActive: boolean
 }
 
+export type Product3DModelItem = {
+  id: string
+  productId: string
+  modelUrl: string
+  previewImageUrl?: string
+  modelName?: string
+  fileSizeBytes: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export type ProductItem = {
   id: string
   displayId: string
@@ -38,6 +50,7 @@ export type ProductItem = {
   status: 'Active' | 'Low stock' | 'Draft' | 'Inactive'
   sku: string
   variants: ProductVariantItem[]
+  models3D?: Product3DModelItem[]
 }
 
 export type CategoryItem = {

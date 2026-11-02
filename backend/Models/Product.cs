@@ -29,5 +29,8 @@ public partial class Product
     public virtual ICollection<ProductVariant> ProductVariants { get; set; } = new List<ProductVariant>();
 
     [JsonIgnore]
+    public virtual ICollection<Product3DModel> Product3DModels { get; set; } = new List<Product3DModel>();
+
+    [JsonIgnore]
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
 }
