@@ -28,7 +28,7 @@ import { API_BASE } from './lib/config'
 import { Model3DList } from './components/Model3DList'
 import { Model3DUpload } from './components/Model3DUpload'
 import { uploadProductModel, type StagedModel } from './lib/models3d'
-import type { CategoryItem, CollectionItem, OrderItem, ProductItem, SessionUser } from './types'
+import type { OrderItem, ProductItem, SessionUser } from './types'
 
 const STORAGE_KEY = 'snug-rebel-admin-session'
 const THEME_KEY = 'snug-rebel-admin-theme'
@@ -43,8 +43,6 @@ const createVariantTemplate = (overrides: Partial<any> = {}) => ({
   isActive: true,
   ...overrides,
 })
-
-const orderStatusOptions = ['Pending', 'Paid', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'] as const
 
 const orderSeed: OrderItem[] = [
   {
@@ -129,24 +127,6 @@ function formatMoney(value: number) {
     currency: 'PHP',
     maximumFractionDigits: 0,
   }).format(value)
-}
-
-function exportCsv(filename: string, rows: Record<string, string | number>[]) {
-  if (!rows.length) return
-  const headers = Object.keys(rows[0])
-  const csv = [
-    headers.join(','),
-    ...rows.map((row) =>
-      headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(',')
-    ),
-  ].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 function App() {
@@ -626,7 +606,22 @@ function ProductsPage() {
       material: product.material || '',
       price: String(product.price),
       isActive: product.isActive,
-      variants: product.variants?.length ? product.variants : [createVariantTemplate()],
+      variants: product.variants?.length
+        ? product.variants.map((variant) => {
+            // ProductVariantItem does not currently declare sizeId/colorId,
+            // although the product API mapping supplies both at runtime.
+            const variantWithDimensions = variant as typeof variant & {
+              sizeId?: number
+              colorId?: number
+            }
+
+            return {
+              ...variant,
+              sizeId: variantWithDimensions.sizeId ?? 1,
+              colorId: variantWithDimensions.colorId ?? 1,
+            }
+          })
+        : [createVariantTemplate()],
     })
     setIsProductModalOpen(true)
   }
