@@ -642,7 +642,7 @@ function ProductsPage() {
       <section className="page-header">
         <div><p className="eyebrow">Catalog</p><h2>Products</h2></div>
         <div className="page-actions">
-          <button type="button" className="primary-button small-button" onClick={() => { setEditingId(null); setForm(f => ({ ...f, name: '', displayId: '', price: '1499' })); setIsProductModalOpen(true) }}><Plus size={16} /> Create product</button>
+          <button type="button" className="primary-button small-button" onClick={() => { setEditingId(null); setPendingModel(null); setForm(f => ({ ...f, name: '', displayId: '', price: '1499' })); setIsProductModalOpen(true) }}><Plus size={16} /> Create product</button>
         </div>
       </section>
 
@@ -726,7 +726,28 @@ function ProductsPage() {
               <label className="full-span"><span>Description</span><textarea value={form.description} onChange={(e) => handleChange('description', e.target.value)} rows={3} /></label>
               <label><span>Base price</span><input type="number" required value={form.price} onChange={(e) => handleChange('price', e.target.value)} /></label>
               <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={(e) => handleChange('isActive', e.target.checked)} /></label>
-              
+
+              <div className="full-span inventory-editor">
+                <div className="inventory-editor-header">
+                  <h4>3D model</h4>
+                </div>
+
+                {editingId ? (
+                  <>
+                    <Model3DUpload
+                      productId={editingId}
+                      onUploadSuccess={() => setModelsVersion((version) => version + 1)}
+                    />
+                    <Model3DList productId={editingId} refreshKey={modelsVersion} />
+                  </>
+                ) : (
+                  <>
+                    <Model3DUpload stagedOnly onStagedChange={setPendingModel} />
+                    <p className="m3d-muted">The model is uploaded right after the product is created.</p>
+                  </>
+                )}
+              </div>
+
               <div className="full-span inventory-editor">
                 <div className="inventory-editor-header"><h4>Variants (Draft support only)</h4></div>
                 {form.variants.map((v, i) => (
