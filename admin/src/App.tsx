@@ -33,27 +33,16 @@ import type { CategoryItem, CollectionItem, OrderItem, ProductItem, SessionUser 
 const STORAGE_KEY = 'snug-rebel-admin-session'
 const THEME_KEY = 'snug-rebel-admin-theme'
 
-const createVariantTemplate = (overrides: Partial<ProductItem['variants'][number]> = {}): ProductItem['variants'][number] => ({
+const createVariantTemplate = (overrides: Partial<any> = {}) => ({
   id: `var-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
   sku: `SR-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-  size: 'M',
-  color: 'Black',
+  sizeId: 1,
+  colorId: 1,
   stock: 12,
   priceOverride: 0,
   isActive: true,
   ...overrides,
 })
-
-const categorySeed: CategoryItem[] = [
-  { id: 'ctg-1', name: 'Streetwear', slug: 'streetwear', products: 18, status: 'Active' },
-  { id: 'ctg-2', name: 'Essentials', slug: 'essentials', products: 24, status: 'Active' },
-  { id: 'ctg-3', name: 'Outerwear', slug: 'outerwear', products: 9, status: 'Hidden' },
-]
-
-const collectionSeed: CollectionItem[] = [
-  { id: 'col-1', name: 'Summer Drop', products: 12, status: 'Live', launch: '2026-10-25' },
-  { id: 'col-2', name: 'City Layers', products: 8, status: 'Scheduled', launch: '2026-11-10' },
-]
 
 const orderStatusOptions = ['Pending', 'Paid', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'] as const
 
@@ -85,34 +74,6 @@ const orderSeed: OrderItem[] = [
     items: [
       { name: 'Cotton Crew', qty: 2, price: 999 },
       { name: 'Shipping', qty: 1, price: 150 },
-    ],
-  },
-  {
-    id: 'ORD-2403',
-    customer: 'Nina Reyes',
-    total: 4190,
-    status: 'Pending',
-    date: '2026-10-27',
-    channel: 'Web',
-    shippingAddress: 'Davao City, Davao del Sur',
-    paymentMethod: 'Maya',
-    items: [
-      { name: 'Lightweight Shell', qty: 1, price: 2399 },
-      { name: 'Utility Cargo', qty: 1, price: 1899 },
-    ],
-  },
-  {
-    id: 'ORD-2404',
-    customer: 'Evan Lee',
-    total: 1330,
-    status: 'Shipped',
-    date: '2026-10-27',
-    channel: 'In-store',
-    shippingAddress: 'Cebu Business Park, Cebu',
-    paymentMethod: 'Bank transfer',
-    items: [
-      { name: 'Cotton Crew', qty: 1, price: 999 },
-      { name: 'Shipping', qty: 1, price: 331 },
     ],
   },
 ]
@@ -153,13 +114,6 @@ function buildCalendarCells(days: typeof defaultAnalytics.days, monthDate = new 
   return cells
 }
 
-const defaultShipmentTable = [
-  { id: 'ORD-2401', category: 'Streetwear', weight: '1,280 g', company: 'Snug Rebel Studio', time: '31 Oct, 2026', route: 'Makati - Cebu', value: '₱5,678.00', status: 'Delivered' },
-  { id: 'ORD-2402', category: 'Essentials', weight: '920 g', company: 'Northwind Apparel', time: '29 Oct, 2026', route: 'Quezon City - Davao', value: '₱2,940.00', status: 'Processing' },
-  { id: 'ORD-2403', category: 'Outerwear', weight: '1,760 g', company: 'City Layers', time: '27 Oct, 2026', route: 'Pasig - Iloilo', value: '₱8,120.00', status: 'Pending' },
-  { id: 'ORD-2404', category: 'Accessories', weight: '640 g', company: 'Drift & Co', time: '26 Oct, 2026', route: 'BGC - Cagayan', value: '₱3,410.00', status: 'Delivered' },
-]
-
 const navItems = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/products', label: 'Products', icon: Package },
@@ -178,24 +132,14 @@ function formatMoney(value: number) {
 }
 
 function exportCsv(filename: string, rows: Record<string, string | number>[]) {
-  if (!rows.length) {
-    return
-  }
-
+  if (!rows.length) return
   const headers = Object.keys(rows[0])
   const csv = [
     headers.join(','),
     ...rows.map((row) =>
-      headers
-        .map((header) => {
-          const value = row[header]
-          const safeValue = String(value ?? '').replace(/"/g, '""')
-          return `"${safeValue}"`
-        })
-        .join(','),
+      headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(',')
     ),
   ].join('\n')
-
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -231,11 +175,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/login"
-          element={<LoginPage session={session} onLogin={setSession} theme={theme} onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} />}
-        />
-        <Route element={<ProtectedLayout session={session} onLogout={() => setSession(null)} theme={theme} onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} />}>
+        <Route path="/login" element={<LoginPage session={session} onLogin={setSession} theme={theme} onToggleTheme={() => setTheme((c) => (c === 'dark' ? 'light' : 'dark'))} />} />
+        <Route element={<ProtectedLayout session={session} onLogout={() => setSession(null)} theme={theme} onToggleTheme={() => setTheme((c) => (c === 'dark' ? 'light' : 'dark'))} />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
@@ -249,20 +190,8 @@ function App() {
   )
 }
 
-function ProtectedLayout({
-  session,
-  onLogout,
-  theme,
-  onToggleTheme,
-}: {
-  session: SessionUser | null
-  onLogout: () => void
-  theme: 'light' | 'dark'
-  onToggleTheme: () => void
-}) {
-  if (!session) {
-    return <Navigate to="/login" replace />
-  }
+function ProtectedLayout({ session, onLogout, theme, onToggleTheme }: any) {
+  if (!session) return <Navigate to="/login" replace />
 
   return (
     <div className="admin-shell">
@@ -274,7 +203,6 @@ function ProtectedLayout({
             <h2>Snug Rebel</h2>
           </div>
         </div>
-
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
@@ -283,49 +211,34 @@ function ProtectedLayout({
             </NavLink>
           ))}
         </nav>
-
         <div className="sidebar-card">
           <p className="eyebrow">Admin account</p>
           <strong>{session.user.firstName} {session.user.lastName}</strong>
           <small>{session.user.role}</small>
         </div>
       </aside>
-
       <main className="main-panel">
         <header className="topbar">
           <div>
             <p className="eyebrow">Welcome back</p>
             <h1>Admin control center</h1>
           </div>
-
           <div className="topbar-actions">
             <button type="button" className="icon-button" onClick={onToggleTheme} aria-label="Toggle theme">
               {theme === 'dark' ? <SunMedium size={18} /> : <MoonStar size={18} />}
             </button>
             <button type="button" className="logout-button" onClick={onLogout}>
-              <LogOut size={16} />
-              Log out
+              <LogOut size={16} /> Log out
             </button>
           </div>
         </header>
-
         <Outlet />
       </main>
     </div>
   )
 }
 
-function LoginPage({
-  session,
-  onLogin,
-  theme,
-  onToggleTheme,
-}: {
-  session: SessionUser | null
-  onLogin: (session: SessionUser) => void
-  theme: 'light' | 'dark'
-  onToggleTheme: () => void
-}) {
+function LoginPage({ session, onLogin, theme, onToggleTheme }: any) {
   const navigate = useNavigate()
   const [email, setEmail] = useState('admin@snugrebel.com')
   const [password, setPassword] = useState('snUgr3bel@0902')
@@ -333,19 +246,16 @@ function LoginPage({
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (session) {
-      navigate('/', { replace: true })
-    }
+    if (session) navigate('/', { replace: true })
   }, [navigate, session])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
     setError('')
-
     try {
       const user = await loginWithEmailPassword(email, password)
-      const nextSession: SessionUser = {
+      onLogin({
         user: {
           pkUserId: user.pkUserId,
           userEmail: user.userEmail,
@@ -356,24 +266,12 @@ function LoginPage({
           isActive: user.isActive ?? true,
         },
         provider: 'email',
-      }
-      onLogin(nextSession)
+      })
       navigate('/', { replace: true })
-    } catch (loginError) {
-      const message = loginError instanceof Error ? loginError.message : 'Unable to sign in.'
-      setError(message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.')
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleOAuth(provider: 'google' | 'github') {
-    setError('')
-    try {
-      await loginWithOAuth(provider)
-    } catch (oauthError) {
-      const message = oauthError instanceof Error ? oauthError.message : 'OAuth is not ready yet.'
-      setError(message)
     }
   }
 
@@ -382,49 +280,26 @@ function LoginPage({
       <div className="login-panel">
         <div className="login-header">
           <div className="brand-mark large">SR</div>
-          <div>
-            <p className="eyebrow">Admin Access</p>
-            <h2>Snug Rebel</h2>
-          </div>
+          <div><p className="eyebrow">Admin Access</p><h2>Snug Rebel</h2></div>
         </div>
-
         <div className="login-actions-top">
-          <button type="button" className="icon-button" onClick={onToggleTheme} aria-label="Toggle theme">
+          <button type="button" className="icon-button" onClick={onToggleTheme}>
             {theme === 'dark' ? <SunMedium size={18} /> : <MoonStar size={18} />}
           </button>
         </div>
-
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-header">
             <h1>Sign in</h1>
             <p>Use your staff credentials to manage catalog, orders, and reports.</p>
           </div>
-
-          <label>
-            <span>Email</span>
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@snugrebel.com" />
-          </label>
-
-          <label>
-            <span>Password</span>
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
-          </label>
-
-          {error ? <div className="error-banner">{error}</div> : null}
-
-          <button type="submit" className="primary-button" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-
+          <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+          <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          {error && <div className="error-banner">{error}</div>}
+          <button type="submit" className="primary-button" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
           <div className="divider"><span>or continue with</span></div>
-
           <div className="oauth-grid">
-            <button type="button" className="secondary-button" onClick={() => handleOAuth('google')}>
-              Google
-            </button>
-            <button type="button" className="secondary-button" onClick={() => handleOAuth('github')}>
-              GitHub
-            </button>
+            <button type="button" className="secondary-button" onClick={() => loginWithOAuth('google').catch((e) => setError(e.message))}>Google</button>
+            <button type="button" className="secondary-button" onClick={() => loginWithOAuth('github').catch((e) => setError(e.message))}>GitHub</button>
           </div>
         </form>
       </div>
@@ -433,10 +308,10 @@ function LoginPage({
 }
 
 function DashboardPage() {
-  const [orders] = useState<OrderItem[]>(orderSeed)
   const [activeFilter, setActiveFilter] = useState('All')
   const [analytics, setAnalytics] = useState(defaultAnalytics)
-  const [notifications, setNotifications] = useState(defaultShipmentTable)
+  const [notifications, setNotifications] = useState<any[]>([])
+  
   const pendingShipments = notifications.filter((item) => item.status === 'Pending' || item.status === 'Processing').length
   const dashboardDateLabel = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())
   const calendarCells = buildCalendarCells(analytics.days)
@@ -449,105 +324,51 @@ function DashboardPage() {
           fetch(`${API_BASE}/api/Dashboard/analytics`),
           fetch(`${API_BASE}/api/Dashboard/activities`),
         ])
-
         if (analyticsResponse.ok) {
           const analyticsPayload = await analyticsResponse.json()
-          const normalizedDays = Array.isArray(analyticsPayload.days)
-            ? analyticsPayload.days
-            : Array.isArray(analyticsPayload.heatmap)
-              ? analyticsPayload.heatmap.map((entry: any, index: number) => ({
-                  date: `${new Date().toISOString().slice(0, 8)}${String(index + 1).padStart(2, '0')}`,
-                  value: Array.isArray(entry?.values) ? Math.max(...entry.values.map((value: number) => Number(value) || 0)) : 0,
-                  orders: Array.isArray(entry?.values) ? entry.values.reduce((sum: number, value: number) => sum + (Number(value) || 0), 0) : 0,
-                  total: Array.isArray(entry?.values) ? entry.values.reduce((sum: number, value: number) => sum + (Number(value) || 0), 0) : 0,
-                  isCurrentDay: false,
-                }))
-              : defaultAnalytics.days
-
-          const numericValues: number[] = normalizedDays
-            .map((entry: any) => Number(entry?.orders ?? entry?.value ?? 0))
-            .filter((value: number) => Number.isFinite(value))
-
-          const nextMinimum = Number(analyticsPayload.minimumNumber ?? (numericValues.length ? Math.min(...numericValues) : defaultAnalytics.minimumNumber))
-          const nextAverage = Number(analyticsPayload.averageNumber ?? (numericValues.length ? Math.round(numericValues.reduce((sum: number, value: number) => sum + value, 0) / numericValues.length) : defaultAnalytics.averageNumber))
-          const nextMaximum = Number(analyticsPayload.maximumNumber ?? (numericValues.length ? Math.max(...numericValues) : defaultAnalytics.maximumNumber))
-
-          setAnalytics({
-            minimumNumber: nextMinimum,
-            averageNumber: nextAverage,
-            maximumNumber: nextMaximum,
-            monthLabel: analyticsPayload.monthLabel ?? defaultAnalytics.monthLabel,
-            days: normalizedDays,
-          })
+          setAnalytics(current => ({
+            ...current,
+            minimumNumber: analyticsPayload.minimumNumber ?? current.minimumNumber,
+            averageNumber: analyticsPayload.averageNumber ?? current.averageNumber,
+            maximumNumber: analyticsPayload.maximumNumber ?? current.maximumNumber,
+            monthLabel: analyticsPayload.monthLabel ?? current.monthLabel,
+            days: analyticsPayload.days ?? current.days,
+          }))
         }
-
         if (activitiesResponse.ok) {
-          const activitiesPayload = await activitiesResponse.json()
-          const nextItems = (activitiesPayload.items ?? []).map((item: any) => ({
-            id: item.orderId ?? item.orderNumber ?? 'unknown',
+          const payload = await activitiesResponse.json()
+          const mapped = (payload.items ?? []).map((item: any) => ({
+            id: item.orderId ?? item.orderNumber,
             category: item.category ?? 'General',
             weight: item.weight ?? '0 g',
             company: item.company ?? 'Unknown',
-            time: item.arrivalTime ? new Date(item.arrivalTime).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A',
+            time: item.arrivalTime ? new Date(item.arrivalTime).toLocaleDateString() : 'N/A',
             route: item.route ?? 'N/A',
-            value: item.price ? `₱${Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₱0.00',
+            value: item.price ? `₱${Number(item.price).toLocaleString()}` : '₱0',
             status: item.status ?? 'Pending',
           }))
-
-          if (nextItems.length > 0) {
-            setNotifications(nextItems)
-          }
+          setNotifications(mapped)
         }
-      } catch {
-        // Keep the seeded dashboard values if the backend is unavailable.
-      }
+      } catch (err) {}
     }
-
     loadDashboardData()
   }, [])
 
-  const filteredShipments =
-    activeFilter === 'All'
-      ? notifications
-      : notifications.filter((shipment) => shipment.status === activeFilter)
-
-  function handleExport() {
-    exportCsv(
-      'snug-rebel-dashboard.csv',
-      orders.map((order) => ({
-        id: order.id,
-        customer: order.customer,
-        total: order.total,
-        status: order.status,
-        date: order.date,
-        channel: order.channel,
-      })),
-    )
-  }
+  const filteredShipments = activeFilter === 'All' ? notifications : notifications.filter((s) => s.status === activeFilter)
 
   return (
     <div className="page-stack">
       <section className="page-header dashboard-header">
-        <div>
-          <p className="eyebrow">Overview</p>
-          <h2>Tracking Orders List</h2>
-        </div>
-        <button type="button" className="primary-button small-button" onClick={handleExport}>
-          <Download size={16} />
-          Export data
-        </button>
+        <div><p className="eyebrow">Overview</p><h2>Tracking Orders List</h2></div>
+        <button type="button" className="primary-button small-button"><Download size={16} /> Export data</button>
       </section>
 
       <section className="database-panel panel-card">
         <div className="database-head">
           <div className="database-title">
             <div className="database-icon" aria-hidden="true">◌</div>
-            <div>
-              <p className="eyebrow">Orders database</p>
-              <strong>Today - {dashboardDateLabel}</strong>
-            </div>
+            <div><p className="eyebrow">Orders database</p><strong>Today - {dashboardDateLabel}</strong></div>
           </div>
-
           <div className="database-actions">
             <div className="notice-pill">You got {pendingShipments} pending shipments</div>
             <button type="button" className="secondary-button small-button">Download report</button>
@@ -559,66 +380,32 @@ function DashboardPage() {
       <section className="analytics-grid single-analytic">
         <article className="panel-card analytic-panel">
           <div className="panel-head analytic-head">
-            <div>
-              <p className="eyebrow">Analytics</p>
-              <h3>Analytic view</h3>
-            </div>
-            <div className="segmented-control" aria-label="Analytics timeframe selector">
+            <div><p className="eyebrow">Analytics</p><h3>Analytic view</h3></div>
+            <div className="segmented-control">
               <button type="button" className="segment active">Day</button>
               <button type="button" className="segment">Week</button>
               <button type="button" className="segment">Month</button>
-              <button type="button" className="segment">Quarter</button>
-              <button type="button" className="segment">Year</button>
             </div>
           </div>
-
           <div className="analytic-metrics">
-            <div className="analytic-metric">
-              <strong>{analytics.minimumNumber}</strong>
-              <span>minimum number</span>
-            </div>
-            <div className="analytic-metric">
-              <strong>{analytics.averageNumber}</strong>
-              <span>average number</span>
-            </div>
-            <div className="analytic-metric">
-              <strong>{analytics.maximumNumber}</strong>
-              <span>maximum number</span>
-            </div>
+            <div className="analytic-metric"><strong>{analytics.minimumNumber}</strong><span>minimum</span></div>
+            <div className="analytic-metric"><strong>{analytics.averageNumber}</strong><span>average</span></div>
+            <div className="analytic-metric"><strong>{analytics.maximumNumber}</strong><span>maximum</span></div>
           </div>
-
-          <div className="heatmap-calendar-wrapper" aria-label="Analytic heat map calendar">
+          <div className="heatmap-calendar-wrapper">
             <div className="heatmap-weekday-row">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <span key={day} className="heatmap-weekday">{day}</span>
-              ))}
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="heatmap-weekday">{day}</span>)}
             </div>
-
             <div className="heatmap-calendar-grid">
               {calendarCells.map((cell) => {
                 const activeOrders = Number(cell.entry?.orders ?? 0)
-                const threshold = Math.max(2, Math.ceil(maxHeatOrders / 3))
-                const intensity = activeOrders > 0
-                  ? Math.min(1, 0.08 + Math.max(0, activeOrders - 1) / Math.max(1, threshold) * 0.92)
-                  : 0
-
+                const intensity = activeOrders > 0 ? Math.min(1, 0.08 + Math.max(0, activeOrders - 1) / Math.max(1, maxHeatOrders) * 0.92) : 0
                 return (
-                  <div
-                    key={cell.date}
-                    className={`heatmap-calendar-cell ${!cell.inMonth ? 'blank' : ''} ${cell.isCurrentDay ? 'current' : ''}`}
-                    style={{
-                      opacity: 1,
-                      background: activeOrders > 0 ? `rgba(45, 143, 91, ${intensity})` : 'rgba(255, 255, 255, 0.96)',
-                    }}
-                  >
+                  <div key={cell.date} className={`heatmap-calendar-cell ${!cell.inMonth ? 'blank' : ''} ${cell.isCurrentDay ? 'current' : ''}`}
+                    style={{ background: activeOrders > 0 ? `rgba(45, 143, 91, ${intensity})` : 'rgba(255, 255, 255, 0.96)' }}>
                     <div className="calendar-cell-content">
                       <span className="calendar-day-number">{cell.dayNumber}</span>
-                      {activeOrders > 0 ? (
-                        <>
-                          <span className="calendar-badge">{activeOrders}</span>
-                          <span className="calendar-total">{Math.round(Number(cell.entry?.total ?? 0))}</span>
-                        </>
-                      ) : null}
+                      {activeOrders > 0 && <><span className="calendar-badge">{activeOrders}</span><span className="calendar-total">{Math.round(Number(cell.entry?.total ?? 0))}</span></>}
                     </div>
                   </div>
                 )
@@ -630,54 +417,19 @@ function DashboardPage() {
 
       <section className="panel-card activity-panel">
         <div className="panel-head activity-head">
-          <div>
-            <p className="eyebrow">Notifications</p>
-            <h3>Recent activities</h3>
-          </div>
-
+          <div><p className="eyebrow">Notifications</p><h3>Recent activities</h3></div>
           <div className="activity-filters">
-            {activityFilters.map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                className={`activity-filter ${filter === activeFilter ? 'active' : ''}`}
-                onClick={() => setActiveFilter(filter)}
-              >
-                {filter}
-              </button>
-            ))}
+            {activityFilters.map((f) => <button key={f} type="button" className={`activity-filter ${f === activeFilter ? 'active' : ''}`} onClick={() => setActiveFilter(f)}>{f}</button>)}
           </div>
         </div>
-
         <div className="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Category</th>
-                <th>Weight</th>
-                <th>Company</th>
-                <th>Arrival time</th>
-                <th>Route</th>
-                <th>Price</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Order ID</th><th>Category</th><th>Weight</th><th>Company</th><th>Arrival</th><th>Route</th><th>Price</th><th>Status</th></tr></thead>
             <tbody>
-              {filteredShipments.map((shipment) => (
-                <tr key={shipment.id}>
-                  <td>{shipment.id}</td>
-                  <td>{shipment.category}</td>
-                  <td>{shipment.weight}</td>
-                  <td>{shipment.company}</td>
-                  <td>{shipment.time}</td>
-                  <td>{shipment.route}</td>
-                  <td>{shipment.value}</td>
-                  <td>
-                    <span className={`status-pill ${shipment.status === 'Delivered' ? 'success' : shipment.status === 'Processing' ? 'warning' : 'neutral'}`}>
-                      {shipment.status}
-                    </span>
-                  </td>
+              {filteredShipments.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.id}</td><td>{s.category}</td><td>{s.weight}</td><td>{s.company}</td><td>{s.time}</td><td>{s.route}</td><td>{s.value}</td>
+                  <td><span className={`status-pill ${s.status === 'Delivered' ? 'success' : s.status === 'Processing' ? 'warning' : 'neutral'}`}>{s.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -690,19 +442,23 @@ function DashboardPage() {
 
 function ProductsPage() {
   const [products, setProducts] = useState<ProductItem[]>([])
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+  const [colors, setColors] = useState<{ id: number; name: string }[]>([])
+  const [sizes, setSizes] = useState<{ id: number; name: string }[]>([])
+
   const [form, setForm] = useState({
     displayId: '',
     slug: '',
     name: '',
-    category: 'Streetwear',
-    categoryId: 'ctg-streetwear',
+    category: '',
+    categoryId: '',
     description: '',
     material: '',
     price: '1499',
-    stock: '20',
     isActive: true,
-    variants: [createVariantTemplate({ sku: 'SR-OT-01-M-BLK', size: 'M', color: 'Black', stock: 20 })],
+    variants: [createVariantTemplate()],
   })
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null)
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
@@ -711,18 +467,41 @@ function ProductsPage() {
   const [modelNotice, setModelNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
-    async function fetchProducts() {
+    async function loadData() {
       try {
-        const response = await fetch(`${API_BASE}/api/Product`)
-        if (response.ok) {
-          const data = await response.json()
-          
-          const mappedProducts: ProductItem[] = data.map((p: any) => ({
+        const [prodRes, catRes, colRes, sizeRes] = await Promise.all([
+          fetch(`${API_BASE}/api/Product`),
+          fetch(`${API_BASE}/api/Category`),
+          fetch(`${API_BASE}/api/Color`),
+          fetch(`${API_BASE}/api/Size`)
+        ])
+        
+        let loadedCategories: any[] = []
+        if (catRes.ok) {
+          loadedCategories = (await catRes.json()).map((c: any) => ({ id: c.pkCategoryId, name: c.categoryName }))
+          setCategories(loadedCategories)
+        }
+        
+        let loadedColors: any[] = []
+        if (colRes.ok) {
+          loadedColors = (await colRes.json()).map((c: any) => ({ id: c.pkColorId, name: c.name }))
+          setColors(loadedColors)
+        }
+        
+        let loadedSizes: any[] = []
+        if (sizeRes.ok) {
+          loadedSizes = (await sizeRes.json()).map((s: any) => ({ id: s.pkSizeId, name: s.label }))
+          setSizes(loadedSizes)
+        }
+
+        if (prodRes.ok) {
+          const data = await prodRes.json()
+          const mappedProducts = data.map((p: any) => ({
             id: p.pkProductId,
             displayId: p.displayId,
             slug: p.slug,
             name: p.productName,
-            category: 'Streetwear', 
+            category: loadedCategories.find(c => c.id === p.fkCategoryId)?.name || 'Unknown', 
             categoryId: p.fkCategoryId,
             description: p.description || '',
             price: p.basePrice || 0,
@@ -734,8 +513,10 @@ function ProductsPage() {
             variants: p.productVariants ? p.productVariants.map((v: any) => ({
               id: v.pkProductVariantId,
               sku: v.sku,
-              size: v.fkSizeId,
-              color: v.fkColorId,
+              sizeId: v.fkSizeId,
+              colorId: v.fkColorId,
+              size: loadedSizes.find(s => s.id === v.fkSizeId)?.name || 'Unknown',
+              color: loadedColors.find(c => c.id === v.fkColorId)?.name || 'Unknown',
               stock: v.stockQuantity,
               priceOverride: v.priceOverride,
               isActive: v.isActive
@@ -744,57 +525,33 @@ function ProductsPage() {
           setProducts(mappedProducts)
         }
       } catch (err) {
-        console.error('Failed to load products:', err)
+        console.error('Failed to load products API dependencies:', err)
       }
     }
-    fetchProducts()
+    loadData()
   }, [])
 
-  function handleChange(field: string, value: string | boolean | ProductItem['variants']) {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  function handleVariantChange(index: number, field: keyof ProductItem['variants'][number], value: string | number | boolean) {
-    setForm((current) => ({
-      ...current,
-      variants: current.variants.map((variant, variantIndex) =>
-        variantIndex === index ? { ...variant, [field]: value } : variant,
-      ),
+  useEffect(() => {
+    if (!editingId && form.categoryId === '' && categories.length > 0) {
+      setForm(f => ({ ...f, categoryId: categories[0].id, category: categories[0].name }))
+    }
+    setForm(f => ({
+      ...f,
+      variants: f.variants.map(v => ({
+        ...v,
+        colorId: v.colorId === 1 && colors.length > 0 ? colors[0].id : v.colorId,
+        sizeId: v.sizeId === 1 && sizes.length > 0 ? sizes[0].id : v.sizeId,
+      }))
     }))
-  }
+  }, [categories, colors, sizes])
 
-  function handleAddVariant() {
-    setForm((current) => ({
-      ...current,
-      variants: [...current.variants, createVariantTemplate()],
-    }))
-  }
-
-  function handleRemoveVariant(index: number) {
-    setForm((current) => ({
-      ...current,
-      variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
-    }))
-  }
-
-  function getTotalStock(variants: ProductItem['variants']) {
-    return variants.reduce((sum, variant) => sum + Math.max(0, variant.stock), 0)
+  function handleChange(field: string, value: any) { setForm((c) => ({ ...c, [field]: value })) }
+  function handleVariantChange(index: number, field: string, value: any) {
+    setForm((c) => ({ ...c, variants: c.variants.map((v, i) => (i === index ? { ...v, [field]: value } : v)) }))
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
-    const normalizedVariants = form.variants
-      .filter((variant) => variant.size || variant.color || variant.sku)
-      .map((variant) => ({
-        ...variant,
-        sku: variant.sku || `SR-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-        stock: Number(variant.stock) || 0,
-        priceOverride: Number(variant.priceOverride) || 0,
-      }))
-
-    const totalStock = getTotalStock(normalizedVariants)
-
     const payload = {
       pkProductId: editingId || undefined,
       displayId: form.displayId,
@@ -814,20 +571,8 @@ function ProductsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-
         if (response.ok) {
-           setProducts((current) =>
-            current.map((item) => (item.id === editingId ? { 
-              ...item, 
-              name: form.name, 
-              price: Number(form.price), 
-              isActive: form.isActive,
-              displayId: form.displayId,
-              slug: form.slug,
-              description: form.description,
-              material: form.material
-            } : item))
-          )
+          setProducts((c) => c.map((item) => (item.id === editingId ? { ...item, name: form.name, price: Number(form.price), isActive: form.isActive, categoryId: form.categoryId, category: categories.find(cat => cat.id === form.categoryId)?.name || 'Unknown' } : item)))
         }
       } else {
         const response = await fetch(`${API_BASE}/api/Product`, {
@@ -835,61 +580,37 @@ function ProductsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-
         if (response.ok) {
           const createdProduct = await response.json()
-          
           const nextProduct: ProductItem = {
             id: createdProduct.pkProductId,
             displayId: createdProduct.displayId,
             slug: createdProduct.slug,
             name: createdProduct.productName,
-            category: form.category,
+            category: categories.find(c => c.id === createdProduct.fkCategoryId)?.name || form.category,
             categoryId: createdProduct.fkCategoryId,
             description: createdProduct.description,
             material: createdProduct.material,
             price: createdProduct.basePrice,
-            stock: totalStock,
+            stock: 0,
             isActive: createdProduct.isActive,
-            status: createdProduct.isActive ? (totalStock <= 0 ? 'Draft' : totalStock < 12 ? 'Low stock' : 'Active') : 'Inactive',
+            status: createdProduct.isActive ? 'Active' : 'Inactive',
             sku: createdProduct.displayId,
-            variants: normalizedVariants,
+            variants: [],
           }
-
-          setProducts((current) => [nextProduct, ...current])
-
+          setProducts((c) => [nextProduct, ...c])
+          
           if (pendingModel?.modelFile) {
-            uploadProductModel(nextProduct.id, pendingModel)
-              .then(() => {
-                setModelsVersion((version) => version + 1)
-                setModelNotice({ tone: 'success', text: `3D model uploaded for ${nextProduct.name}.` })
-              })
-              .catch((uploadError) => {
-                const reason = uploadError instanceof Error ? uploadError.message : 'Upload failed.'
-                setModelNotice({ tone: 'error', text: `${nextProduct.name} was created, but its 3D model was not uploaded: ${reason}` })
-              })
+            uploadProductModel(nextProduct.id, pendingModel).then(() => {
+              setModelsVersion((v) => v + 1)
+              setModelNotice({ tone: 'success', text: `3D model uploaded for ${nextProduct.name}.` })
+            }).catch((e) => setModelNotice({ tone: 'error', text: `Upload failed: ${e.message}` }))
           }
         }
       }
-    } catch (err) {
-       console.error('Error saving product:', err)
-    }
+    } catch (err) { console.error(err) }
 
     setPendingModel(null)
-    setForm({
-      displayId: '',
-      slug: '',
-      name: '',
-      category: 'Streetwear',
-      categoryId: 'ctg-streetwear',
-      description: '',
-      material: '',
-      price: '1499',
-      stock: '20',
-      isActive: true,
-      variants: [createVariantTemplate({ sku: 'SR-OT-01-M-BLK', size: 'M', color: 'Black', stock: 20 })],
-    })
-    setEditingId(null)
     setIsProductModalOpen(false)
   }
 
@@ -900,149 +621,46 @@ function ProductsPage() {
       slug: product.slug,
       name: product.name,
       category: product.category,
-      categoryId: product.categoryId || 'ctg-streetwear',
+      categoryId: product.categoryId || (categories.length > 0 ? categories[0].id : ''),
       description: product.description || '',
       material: product.material || '',
       price: String(product.price),
-      stock: String(product.stock),
       isActive: product.isActive,
-      variants: product.variants && product.variants.length > 0 ? product.variants : [createVariantTemplate()],
+      variants: product.variants?.length ? product.variants : [createVariantTemplate()],
     })
     setIsProductModalOpen(true)
   }
 
   async function handleDeactivate(id: string) {
     try {
-      const response = await fetch(`${API_BASE}/api/Product/${id}/deactivate`, {
-        method: 'DELETE',
-      })
-
+      const response = await fetch(`${API_BASE}/api/Product/${id}/deactivate`, { method: 'DELETE' })
       if (response.ok) {
-        setProducts((current) =>
-          current.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  isActive: false,
-                  status: 'Inactive',
-                  variants: item.variants.map((variant) => ({ ...variant, isActive: false })),
-                }
-              : item,
-          ),
-        )
-        setSelectedProduct((current) =>
-          current && current.id === id ? { ...current, isActive: false, status: 'Inactive', variants: current.variants.map((variant) => ({ ...variant, isActive: false })) } : current,
-        )
+        setProducts((c) => c.map((item) => (item.id === id ? { ...item, isActive: false, status: 'Inactive' } : item)))
+        setSelectedProduct((c) => (c && c.id === id ? { ...c, isActive: false, status: 'Inactive' } : c))
       }
-    } catch (err) {
-      console.error('Failed to deactivate product', err)
-    }
-  }
-
-  function openProductDetails(product: ProductItem) {
-    setSelectedProduct(product)
-  }
-
-  function openCreateProductModal() {
-    setEditingId(null)
-    setPendingModel(null)
-    setForm({
-      displayId: '',
-      slug: '',
-      name: '',
-      category: 'Streetwear',
-      categoryId: 'ctg-streetwear',
-      description: '',
-      material: '',
-      price: '1499',
-      stock: '20',
-      isActive: true,
-      variants: [createVariantTemplate({ sku: 'SR-OT-01-M-BLK', size: 'M', color: 'Black', stock: 20 })],
-    })
-    setIsProductModalOpen(true)
+    } catch (err) {}
   }
 
   return (
     <div className="page-stack">
       <section className="page-header">
-        <div>
-          <p className="eyebrow">Catalog</p>
-          <h2>Products</h2>
-        </div>
+        <div><p className="eyebrow">Catalog</p><h2>Products</h2></div>
         <div className="page-actions">
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() =>
-              exportCsv(
-                'products-export.csv',
-                products.map((item) => ({
-                  id: item.id,
-                  name: item.name,
-                  category: item.category,
-                  price: item.price,
-                  stock: item.stock,
-                  status: item.status,
-                })),
-              )
-            }
-          >
-            <Download size={16} />
-            Export CSV
-          </button>
-          <button type="button" className="primary-button small-button" onClick={openCreateProductModal}>
-            <Plus size={16} />
-            Create product
-          </button>
+          <button type="button" className="primary-button small-button" onClick={() => { setEditingId(null); setForm(f => ({ ...f, name: '', displayId: '', price: '1499' })); setIsProductModalOpen(true) }}><Plus size={16} /> Create product</button>
         </div>
       </section>
 
-      {modelNotice ? (
-        <div className={modelNotice.tone === 'error' ? 'error-banner' : 'notice-pill'} role="status">
-          {modelNotice.text}{' '}
-          <button type="button" className="link-button" onClick={() => setModelNotice(null)}>
-            Dismiss
-          </button>
-        </div>
-      ) : null}
+      {modelNotice && <div className={modelNotice.tone === 'error' ? 'error-banner' : 'notice-pill'} role="status">{modelNotice.text} <button className="link-button" onClick={() => setModelNotice(null)}>Dismiss</button></div>}
 
       <section className="panel-card">
-        <div className="panel-head">
-          <div>
-            <p className="eyebrow">Catalog</p>
-            <h3>Current items</h3>
-          </div>
-        </div>
-
         <div className="table-wrap compact">
           <table>
-            <thead>
-              <tr>
-                <th>Display ID</th>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Price</th>
-                <th>Stock</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th></tr></thead>
             <tbody>
               {products.map((product) => (
-                <tr key={product.id} className="row-clickable" onClick={() => openProductDetails(product)}>
-                  <td>{product.displayId}</td>
-                  <td>{product.name}</td>
-                  <td>{product.category}</td>
-                  <td>{formatMoney(product.price)}</td>
-                  <td>{product.stock}</td>
-                  <td>
-                    <span
-                      className={`status-pill ${
-                        product.status === 'Active' ? 'success' : product.status === 'Low stock' ? 'warning' : 'neutral'
-                      }`}
-                    >
-                      {product.status}
-                    </span>
-                  </td>
+                <tr key={product.id} className="row-clickable" onClick={() => setSelectedProduct(product)}>
+                  <td>{product.displayId}</td><td>{product.name}</td><td>{product.category}</td><td>{formatMoney(product.price)}</td><td>{product.stock}</td>
+                  <td><span className={`status-pill ${product.status === 'Active' ? 'success' : 'neutral'}`}>{product.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -1050,360 +668,132 @@ function ProductsPage() {
         </div>
       </section>
 
-      {selectedProduct ? (
+      {selectedProduct && (
         <div className="order-modal-backdrop" onClick={() => setSelectedProduct(null)}>
-          <div className="order-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="order-modal" onClick={(e) => e.stopPropagation()}>
             <div className="order-modal-header">
-              <div>
-                <p className="eyebrow">Product details</p>
-                <h3>{selectedProduct.name}</h3>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setSelectedProduct(null)} aria-label="Close product details">
-                ×
-              </button>
+              <div><p className="eyebrow">Product details</p><h3>{selectedProduct.name}</h3></div>
+              <button type="button" className="icon-button" onClick={() => setSelectedProduct(null)}>×</button>
             </div>
-
             <div className="order-modal-grid">
               <div className="order-detail-block">
                 <div className="detail-list">
-                  <div>
-                    <label>Display ID</label>
-                    <span>{selectedProduct.displayId}</span>
-                  </div>
-                  <div>
-                    <label>Slug</label>
-                    <span>{selectedProduct.slug}</span>
-                  </div>
-                  <div>
-                    <label>Category</label>
-                    <span>{selectedProduct.category}</span>
-                  </div>
-                  <div>
-                    <label>Material</label>
-                    <span>{selectedProduct.material || 'Unknown'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="order-detail-block">
-                <div className="detail-list">
-                  <div>
-                    <label>Price</label>
-                    <span>{formatMoney(selectedProduct.price)}</span>
-                  </div>
-                  <div>
-                    <label>Stock</label>
-                    <span>{selectedProduct.stock} units</span>
-                  </div>
-                  <div>
-                    <label>Status</label>
-                    <span
-                      className={`status-pill ${
-                        selectedProduct.status === 'Active' ? 'success' : selectedProduct.status === 'Low stock' ? 'warning' : 'neutral'
-                      }`}
-                    >
-                      {selectedProduct.status}
-                    </span>
-                  </div>
-                  <div>
-                    <label>Variants</label>
-                    <span>{selectedProduct.variants ? selectedProduct.variants.length : 0} options</span>
-                  </div>
+                  <div><label>Category</label><span>{selectedProduct.category}</span></div>
+                  <div><label>Material</label><span>{selectedProduct.material || 'N/A'}</span></div>
+                  <div><label>Price</label><span>{formatMoney(selectedProduct.price)}</span></div>
                 </div>
               </div>
             </div>
-
-            <div className="order-items-header">
-              <h4>Description</h4>
-            </div>
+            <div className="order-items-header"><h4>Description</h4></div>
             <p className="empty-state-copy">{selectedProduct.description || 'No description yet.'}</p>
-
-            <div className="order-items-header">
-              <h4>Inventory</h4>
-            </div>
-
-            <div className="inventory-table-wrap">
-              <table className="inventory-table">
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Size</th>
-                    <th>Color</th>
-                    <th>Stock</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedProduct.variants && selectedProduct.variants.map((variant) => (
-                    <tr key={variant.id}>
-                      <td>{variant.sku}</td>
-                      <td>{variant.size}</td>
-                      <td>{variant.color}</td>
-                      <td>{variant.stock}</td>
-                      <td>
-                        <span className={`status-pill ${variant.isActive ? 'success' : 'neutral'}`}>
-                          {variant.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="order-items-header">
-              <h4>3D models</h4>
-            </div>
-
-            <Model3DUpload
-              productId={selectedProduct.id}
-              onUploadSuccess={() => setModelsVersion((version) => version + 1)}
-            />
+            
+            <div className="order-items-header"><h4>3D models</h4></div>
+            <Model3DUpload productId={selectedProduct.id} onUploadSuccess={() => setModelsVersion((v) => v + 1)} />
             <Model3DList productId={selectedProduct.id} refreshKey={modelsVersion} />
 
-            <div className="order-items-header">
-              <h4>Actions</h4>
-            </div>
-
+            <div className="order-items-header"><h4>Actions</h4></div>
             <div className="order-items-list">
               <div className="order-item-row">
-                <div>
-                  <strong>Product actions</strong>
-                  <span>Update, review, or deactivate this item</span>
-                </div>
+                <div><strong>Product actions</strong></div>
                 <div className="actions-cell">
-                  <button
-                    type="button"
-                    className="primary-button small-button"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      handleEdit(selectedProduct)
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="link-button danger"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      handleDeactivate(selectedProduct.id)
-                    }}
-                  >
-                    Deactivate
-                  </button>
+                  <button className="primary-button small-button" onClick={() => { setSelectedProduct(null); handleEdit(selectedProduct) }}>Edit</button>
+                  <button className="link-button danger" onClick={() => { setSelectedProduct(null); handleDeactivate(selectedProduct.id) }}>Deactivate</button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {isProductModalOpen ? (
+      {isProductModalOpen && (
         <div className="order-modal-backdrop" onClick={() => setIsProductModalOpen(false)}>
-          <div className="order-modal product-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="order-modal product-modal" onClick={(e) => e.stopPropagation()}>
             <div className="order-modal-header">
-              <div>
-                <p className="eyebrow">Catalog</p>
-                <h3>{editingId ? 'Edit product' : 'Create product'}</h3>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setIsProductModalOpen(false)} aria-label="Close product form">
-                ×
-              </button>
+              <div><p className="eyebrow">Catalog</p><h3>{editingId ? 'Edit product' : 'Create product'}</h3></div>
+              <button className="icon-button" onClick={() => setIsProductModalOpen(false)}>×</button>
             </div>
-
             <form className="product-form-grid" onSubmit={handleSubmit}>
-              <label>
-                <span>Display ID</span>
-                <input value={form.displayId} onChange={(event) => handleChange('displayId', event.target.value)} placeholder="SR-OT-01" />
-              </label>
-
-              <label>
-                <span>Slug</span>
-                <input value={form.slug} onChange={(event) => handleChange('slug', event.target.value)} placeholder="oversized-tee" />
-              </label>
-
-              <label className="full-span">
-                <span>Product name</span>
-                <input value={form.name} onChange={(event) => handleChange('name', event.target.value)} placeholder="Oversized Tee" />
-              </label>
-
+              <label><span>Display ID</span><input value={form.displayId} onChange={(e) => handleChange('displayId', e.target.value)} /></label>
+              <label><span>Slug</span><input value={form.slug} onChange={(e) => handleChange('slug', e.target.value)} /></label>
+              <label className="full-span"><span>Product name</span><input required value={form.name} onChange={(e) => handleChange('name', e.target.value)} /></label>
               <label>
                 <span>Category</span>
-                <select
-                  value={form.category}
-                  onChange={(event) => {
-                    const selected = event.target.value
-                    const categoryMap: Record<string, string> = {
-                      Streetwear: 'ctg-streetwear',
-                      Essentials: 'ctg-essentials',
-                      Outerwear: 'ctg-outerwear',
-                      Basics: 'ctg-basics',
-                    }
-                    handleChange('category', selected)
-                    handleChange('categoryId', categoryMap[selected] ?? 'ctg-streetwear')
-                  }}
-                >
-                  <option>Streetwear</option>
-                  <option>Essentials</option>
-                  <option>Outerwear</option>
-                  <option>Basics</option>
+                <select value={form.categoryId} onChange={(e) => {
+                  const val = e.target.value
+                  handleChange('categoryId', val)
+                  handleChange('category', categories.find(c => c.id === val)?.name || '')
+                }}>
+                  {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                 </select>
               </label>
-
-              <label>
-                <span>Material</span>
-                <input value={form.material} onChange={(event) => handleChange('material', event.target.value)} placeholder="Cotton blend" />
-              </label>
-
-              <label className="full-span">
-                <span>Description</span>
-                <textarea value={form.description} onChange={(event) => handleChange('description', event.target.value)} rows={4} placeholder="Describe the product, fit, and the core material story." />
-              </label>
-
-              <label>
-                <span>Base price</span>
-                <input type="number" value={form.price} onChange={(event) => handleChange('price', event.target.value)} />
-              </label>
-
-              <label>
-                <span>Active</span>
-                <input type="checkbox" checked={form.isActive} onChange={(event) => handleChange('isActive', event.target.checked)} />
-              </label>
-
+              <label><span>Material</span><input value={form.material} onChange={(e) => handleChange('material', e.target.value)} /></label>
+              <label className="full-span"><span>Description</span><textarea value={form.description} onChange={(e) => handleChange('description', e.target.value)} rows={3} /></label>
+              <label><span>Base price</span><input type="number" required value={form.price} onChange={(e) => handleChange('price', e.target.value)} /></label>
+              <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={(e) => handleChange('isActive', e.target.checked)} /></label>
+              
               <div className="full-span inventory-editor">
-                <div className="inventory-editor-header">
-                  <h4>3D model</h4>
-                </div>
-
-                {editingId ? (
-                  <>
-                    <Model3DUpload
-                      productId={editingId}
-                      onUploadSuccess={() => setModelsVersion((version) => version + 1)}
-                    />
-                    <Model3DList productId={editingId} refreshKey={modelsVersion} />
-                  </>
-                ) : (
-                  <>
-                    <Model3DUpload stagedOnly onStagedChange={setPendingModel} />
-                    <p className="m3d-muted">The model is uploaded right after the product is created.</p>
-                  </>
-                )}
-              </div>
-
-              <div className="full-span inventory-editor">
-                <div className="inventory-editor-header">
-                  <h4>Variant inventory</h4>
-                  <button type="button" className="secondary-button small-button" onClick={handleAddVariant}>Add variant</button>
-                </div>
-
-                {form.variants.map((variant, index) => (
-                  <div key={variant.id} className="variant-row">
-                    <div className="variant-grid">
-                      <label>
-                        <span>SKU</span>
-                        <input value={variant.sku} onChange={(event) => handleVariantChange(index, 'sku', event.target.value)} />
-                      </label>
-
-                      <label>
-                        <span>Size</span>
-                        <input value={variant.size} onChange={(event) => handleVariantChange(index, 'size', event.target.value)} />
-                      </label>
-
-                      <label>
-                        <span>Color</span>
-                        <input value={variant.color} onChange={(event) => handleVariantChange(index, 'color', event.target.value)} />
-                      </label>
-
-                      <label>
-                        <span>Stock</span>
-                        <input type="number" value={variant.stock} onChange={(event) => handleVariantChange(index, 'stock', Number(event.target.value))} />
-                      </label>
-
-                      <label>
-                        <span>Price override</span>
-                        <input type="number" value={variant.priceOverride ?? 0} onChange={(event) => handleVariantChange(index, 'priceOverride', Number(event.target.value))} />
-                      </label>
-
-                      <label className="toggle-row compact-toggle">
-                        <span>Active</span>
-                        <input type="checkbox" checked={variant.isActive} onChange={(event) => handleVariantChange(index, 'isActive', event.target.checked)} />
-                      </label>
-                    </div>
-
-                    {form.variants.length > 1 ? (
-                      <button type="button" className="link-button danger" onClick={() => handleRemoveVariant(index)}>
-                        Remove
-                      </button>
-                    ) : null}
+                <div className="inventory-editor-header"><h4>Variants (Draft support only)</h4></div>
+                {form.variants.map((v, i) => (
+                  <div key={v.id} className="variant-grid">
+                    <label><span>SKU</span><input value={v.sku} onChange={(e) => handleVariantChange(i, 'sku', e.target.value)}/></label>
+                    <label><span>Size</span><select value={v.sizeId} onChange={e => handleVariantChange(i, 'sizeId', Number(e.target.value))}>{sizes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+                    <label><span>Color</span><select value={v.colorId} onChange={e => handleVariantChange(i, 'colorId', Number(e.target.value))}>{colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+                    <label><span>Stock</span><input type="number" value={v.stock} onChange={e => handleVariantChange(i, 'stock', Number(e.target.value))}/></label>
                   </div>
                 ))}
               </div>
-
               <div className="product-form-actions full-span">
-                <button type="button" className="secondary-button" onClick={() => setIsProductModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary-button">
-                  {editingId ? 'Save changes' : 'Create product'}
-                </button>
+                <button type="button" className="secondary-button" onClick={() => setIsProductModalOpen(false)}>Cancel</button>
+                <button type="submit" className="primary-button">{editingId ? 'Save changes' : 'Create product'}</button>
               </div>
             </form>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
-function CategoriesPage() {
-  const [items, setItems] = useState<CategoryItem[]>(categorySeed)
 
-  function handleAdd() {
-    const next: CategoryItem = {
-      id: `ctg-${Date.now()}`,
-      name: 'New category',
-      slug: 'new-category',
-      products: 0,
-      status: 'Active',
-    }
-    setItems((current) => [next, ...current])
+function CategoriesPage() {
+  const [items, setItems] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/Category`)
+      .then(res => res.json())
+      .then(data => setItems(data.map((c: any) => ({
+        id: c.pkCategoryId, name: c.categoryName, slug: c.slug, status: c.isActive ? 'Active' : 'Hidden'
+      }))))
+      .catch(console.error)
+  }, [])
+
+  async function handleAdd() {
+    const payload = { categoryName: `New category ${Date.now().toString().slice(-4)}`, isActive: true }
+    try {
+      const res = await fetch(`${API_BASE}/api/Category`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (res.ok) {
+        const created = await res.json()
+        setItems(c => [{ id: created.pkCategoryId, name: created.categoryName, slug: created.slug, status: created.isActive ? 'Active' : 'Hidden' }, ...c])
+      }
+    } catch (err) { console.error(err) }
   }
 
   return (
     <div className="page-stack">
       <section className="page-header">
-        <div>
-          <p className="eyebrow">Catalog setup</p>
-          <h2>Categories</h2>
-        </div>
-        <button type="button" className="primary-button small-button" onClick={handleAdd}>
-          <FolderKanban size={16} />
-          Add category
-        </button>
+        <div><p className="eyebrow">Catalog setup</p><h2>Categories</h2></div>
+        <button type="button" className="primary-button small-button" onClick={handleAdd}><FolderKanban size={16} /> Add category</button>
       </section>
-
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Slug</th>
-                <th>Products</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Name</th><th>Slug</th><th>Status</th></tr></thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.slug}</td>
-                  <td>{item.products}</td>
-                  <td>
-                    <span className={`status-pill ${item.status === 'Active' ? 'success' : 'neutral'}`}>{item.status}</span>
-                  </td>
-                </tr>
+                <tr key={item.id}><td>{item.name}</td><td>{item.slug}</td><td><span className={`status-pill ${item.status === 'Active' ? 'success' : 'neutral'}`}>{item.status}</span></td></tr>
               ))}
             </tbody>
           </table>
@@ -1414,53 +804,45 @@ function CategoriesPage() {
 }
 
 function CollectionsPage() {
-  const [items, setItems] = useState<CollectionItem[]>(collectionSeed)
+  const [items, setItems] = useState<any[]>([])
 
-  function handleAdd() {
-    const next: CollectionItem = {
-      id: `col-${Date.now()}`,
-      name: 'New collection',
-      products: 0,
-      status: 'Scheduled',
-      launch: '2026-11-15',
-    }
-    setItems((current) => [next, ...current])
+  useEffect(() => {
+    fetch(`${API_BASE}/api/Collection`)
+      .then(res => res.json())
+      .then(data => setItems(data.map((c: any) => ({
+        id: c.pkCollectionId, name: c.collectionName, launch: c.launchDate ? new Date(c.launchDate).toLocaleDateString() : 'N/A', status: c.isActive ? 'Live' : 'Scheduled'
+      }))))
+      .catch(console.error)
+  }, [])
+
+  async function handleAdd() {
+    const payload = { collectionName: `New Collection ${Date.now().toString().slice(-4)}`, isActive: false, launchDate: new Date().toISOString() }
+    try {
+      const res = await fetch(`${API_BASE}/api/Collection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (res.ok) {
+        const c = await res.json()
+        setItems(curr => [{ id: c.pkCollectionId, name: c.collectionName, launch: c.launchDate ? new Date(c.launchDate).toLocaleDateString() : 'N/A', status: c.isActive ? 'Live' : 'Scheduled' }, ...curr])
+      }
+    } catch (err) { console.error(err) }
   }
 
   return (
     <div className="page-stack">
       <section className="page-header">
-        <div>
-          <p className="eyebrow">Marketing</p>
-          <h2>Collections</h2>
-        </div>
-        <button type="button" className="primary-button small-button" onClick={handleAdd}>
-          <Layers3 size={16} />
-          Add collection
-        </button>
+        <div><p className="eyebrow">Marketing</p><h2>Collections</h2></div>
+        <button type="button" className="primary-button small-button" onClick={handleAdd}><Layers3 size={16} /> Add collection</button>
       </section>
-
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Products</th>
-                <th>Launch</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Name</th><th>Launch</th><th>Status</th></tr></thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.products}</td>
-                  <td>{item.launch}</td>
-                  <td>
-                    <span className={`status-pill ${item.status === 'Live' ? 'success' : 'warning'}`}>{item.status}</span>
-                  </td>
-                </tr>
+                <tr key={item.id}><td>{item.name}</td><td>{item.launch}</td><td><span className={`status-pill ${item.status === 'Live' ? 'success' : 'warning'}`}>{item.status}</span></td></tr>
               ))}
             </tbody>
           </table>
@@ -1474,153 +856,58 @@ function OrdersPage() {
   const [orders, setOrders] = useState<OrderItem[]>(orderSeed)
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null)
 
-  function updateStatus(id: string, status: OrderItem['status']) {
-    setOrders((current) => current.map((order) => (order.id === id ? { ...order, status } : order)))
-    setSelectedOrder((current) => (current && current.id === id ? { ...current, status } : current))
-  }
-
-  function handleExport() {
-    exportCsv(
-      'orders-export.csv',
-      orders.map((order) => ({
-        id: order.id,
-        customer: order.customer,
-        total: order.total,
-        status: order.status,
-        date: order.date,
-        channel: order.channel,
-      })),
-    )
-  }
-
-  function getStatusTone(status: OrderItem['status']) {
-    if (status === 'Paid' || status === 'Shipped' || status === 'Delivered') {
-      return 'success'
-    }
-    if (status === 'Processing' || status === 'Pending') {
-      return 'warning'
-    }
-    return 'neutral'
-  }
+  useEffect(() => {
+    fetch(`${API_BASE}/api/Order`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data)) {
+           // Replace seeded data if an endpoint is ever successfully added
+           setOrders(data.map(o => ({
+             id: o.orderNumber, customer: o.fkUserId, total: o.totalAmount, status: 'Pending', date: new Date(o.placedAt).toLocaleDateString(), channel: 'Web'
+           })))
+        }
+      })
+      .catch(() => console.warn('OrderController does not expose GET /api/Order yet. Falling back to seed data.'))
+  }, [])
 
   return (
     <div className="page-stack">
       <section className="page-header">
-        <div>
-          <p className="eyebrow">Monitoring</p>
-          <h2>Orders</h2>
-        </div>
-        <button type="button" className="primary-button small-button" onClick={handleExport}>
-          <Download size={16} />
-          Export orders
-        </button>
+        <div><p className="eyebrow">Monitoring</p><h2>Orders</h2></div>
       </section>
-
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
             <tbody>
               {orders.map((order) => (
                 <tr key={order.id} className="row-clickable" onClick={() => setSelectedOrder(order)}>
-                  <td>{order.id}</td>
-                  <td>{order.customer}</td>
-                  <td>{formatMoney(order.total)}</td>
-                  <td>
-                    <span className={`status-pill ${getStatusTone(order.status)}`}>{order.status}</span>
-                  </td>
+                  <td>{order.id}</td><td>{order.customer}</td><td>{formatMoney(order.total)}</td>
+                  <td><span className={`status-pill ${order.status === 'Paid' ? 'success' : 'warning'}`}>{order.status}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
-
-      {selectedOrder ? (
+      {selectedOrder && (
         <div className="order-modal-backdrop" onClick={() => setSelectedOrder(null)}>
-          <div className="order-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="order-modal" onClick={e => e.stopPropagation()}>
             <div className="order-modal-header">
-              <div>
-                <p className="eyebrow">Order details</p>
-                <h3>{selectedOrder.id}</h3>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setSelectedOrder(null)} aria-label="Close order details">
-                ×
-              </button>
+              <div><p className="eyebrow">Order details</p><h3>{selectedOrder.id}</h3></div>
+              <button className="icon-button" onClick={() => setSelectedOrder(null)}>×</button>
             </div>
-
-            <div className="order-modal-grid">
-              <div className="order-detail-block">
-                <div className="order-identity">
-                  <strong>{selectedOrder.customer}</strong>
-                  <span>{selectedOrder.channel}</span>
-                </div>
-                <div className="detail-list">
-                  <div>
-                    <label>Date</label>
-                    <span>{selectedOrder.date}</span>
-                  </div>
-                  <div>
-                    <label>Shipping</label>
-                    <span>{selectedOrder.shippingAddress ?? 'Not provided'}</span>
-                  </div>
-                  <div>
-                    <label>Payment</label>
-                    <span>{selectedOrder.paymentMethod ?? 'Card'}</span>
-                  </div>
-                  <div>
-                    <label>Total</label>
-                    <span>{formatMoney(selectedOrder.total)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="order-detail-block">
-                <label>
-                  <span>Current status</span>
-                  <select value={selectedOrder.status} onChange={(event) => updateStatus(selectedOrder.id, event.target.value as OrderItem['status'])}>
-                    {orderStatusOptions.map((status) => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="detail-list compact">
-                  <div>
-                    <label>Order status</label>
-                    <span className={`status-pill ${getStatusTone(selectedOrder.status)}`}>{selectedOrder.status}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="order-items-header">
-              <h4>Items</h4>
-              <strong>{selectedOrder.items?.length ?? 0} line items</strong>
-            </div>
-
             <div className="order-items-list">
               {(selectedOrder.items ?? []).map((item) => (
-                <div key={`${selectedOrder.id}-${item.name}`} className="order-item-row">
-                  <div>
-                    <strong>{item.name}</strong>
-                    <span>Qty {item.qty}</span>
-                  </div>
+                <div key={item.name} className="order-item-row">
+                  <div><strong>{item.name}</strong><span>Qty {item.qty}</span></div>
                   <span>{formatMoney(item.price)}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
@@ -1628,40 +915,17 @@ function OrdersPage() {
 function CustomersPage() {
   const customers = [
     { id: 'USR-1001', name: 'Maya Santos', email: 'maya@demo.com', orders: 16, lifetime: 28360 },
-    { id: 'USR-1002', name: 'Liam Cruz', email: 'liam@demo.com', orders: 8, lifetime: 15420 },
-    { id: 'USR-1003', name: 'Nina Reyes', email: 'nina@demo.com', orders: 11, lifetime: 22500 },
   ]
-
   return (
     <div className="page-stack">
-      <section className="page-header">
-        <div>
-          <p className="eyebrow">People</p>
-          <h2>Customers</h2>
-        </div>
-      </section>
-
+      <section className="page-header"><div><p className="eyebrow">People</p><h2>Customers</h2></div></section>
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Orders</th>
-                <th>Lifetime</th>
-              </tr>
-            </thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Orders</th><th>Lifetime</th></tr></thead>
             <tbody>
               {customers.map((customer) => (
-                <tr key={customer.id}>
-                  <td>{customer.id}</td>
-                  <td>{customer.name}</td>
-                  <td>{customer.email}</td>
-                  <td>{customer.orders}</td>
-                  <td>{formatMoney(customer.lifetime)}</td>
-                </tr>
+                <tr key={customer.id}><td>{customer.id}</td><td>{customer.name}</td><td>{customer.email}</td><td>{customer.orders}</td><td>{formatMoney(customer.lifetime)}</td></tr>
               ))}
             </tbody>
           </table>
