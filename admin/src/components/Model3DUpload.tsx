@@ -175,6 +175,10 @@ export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUp
             placeholder="Model name (optional)"
             value={modelName}
             onChange={(event) => setModelName(event.target.value)}
+            onKeyDown={(event) => {
+              // Don't let Enter submit a surrounding form (e.g. the product form).
+              if (event.key === 'Enter') event.preventDefault()
+            }}
           />
 
           <button type="button" className="primary-button" onClick={handleUpload} disabled={isUploading || !modelFile}>

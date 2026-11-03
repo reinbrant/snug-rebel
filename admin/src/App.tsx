@@ -1283,6 +1283,26 @@ function ProductsPage() {
                 ))}
               </div>
 
+              <div className="full-span inventory-editor">
+                <div className="inventory-editor-header">
+                  <h4>3D models</h4>
+                </div>
+
+                {editingId ? (
+                  <>
+                    <Model3DUpload
+                      productId={editingId}
+                      onUploadSuccess={() => setModelsVersion((version) => version + 1)}
+                    />
+                    <Model3DList productId={editingId} refreshKey={modelsVersion} />
+                  </>
+                ) : (
+                  <p className="empty-state-copy">
+                    Save the product first, then edit it or open its details to upload 3D models.
+                  </p>
+                )}
+              </div>
+
               <div className="product-form-actions full-span">
                 <button type="button" className="secondary-button" onClick={() => setIsProductModalOpen(false)}>
                   Cancel
