@@ -27,6 +27,7 @@ import { loginWithEmailPassword, loginWithOAuth } from './lib/auth'
 import { API_BASE } from './lib/config'
 import { Model3DList } from './components/Model3DList'
 import { Model3DUpload } from './components/Model3DUpload'
+import { uploadProductModel, type StagedModel } from './lib/models3d'
 import type { CategoryItem, CollectionItem, OrderItem, ProductItem, SessionUser } from './types'
 
 const STORAGE_KEY = 'snug-rebel-admin-session'
@@ -790,6 +791,8 @@ function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null)
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
   const [modelsVersion, setModelsVersion] = useState(0)
+  const [pendingModel, setPendingModel] = useState<StagedModel | null>(null)
+  const [modelNotice, setModelNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   function handleChange(field: string, value: string | boolean | ProductItem['variants']) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -857,7 +860,22 @@ function ProductsPage() {
       setProducts((current) => current.map((item) => (item.id === editingId ? nextProduct : item)))
     } else {
       setProducts((current) => [nextProduct, ...current])
+
+      // Upload the 3D model picked in the create form now that the product exists.
+      if (pendingModel?.modelFile) {
+        const staged = pendingModel
+        uploadProductModel(nextProduct.id, staged)
+          .then(() => {
+            setModelsVersion((version) => version + 1)
+            setModelNotice({ tone: 'success', text: `3D model uploaded for ${nextProduct.name}.` })
+          })
+          .catch((uploadError) => {
+            const reason = uploadError instanceof Error ? uploadError.message : 'Upload failed.'
+            setModelNotice({ tone: 'error', text: `${nextProduct.name} was created, but its 3D model was not uploaded: ${reason}` })
+          })
+      }
     }
+    setPendingModel(null)
 
     setForm({
       displayId: '',
@@ -918,6 +936,7 @@ function ProductsPage() {
 
   function openCreateProductModal() {
     setEditingId(null)
+    setPendingModel(null)
     setForm({
       displayId: '',
       slug: '',
@@ -968,6 +987,15 @@ function ProductsPage() {
           </button>
         </div>
       </section>
+
+      {modelNotice ? (
+        <div className={modelNotice.tone === 'error' ? 'error-banner' : 'notice-pill'} role="status">
+          {modelNotice.text}{' '}
+          <button type="button" className="link-button" onClick={() => setModelNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <section className="panel-card">
         <div className="panel-head">
@@ -1236,6 +1264,27 @@ function ProductsPage() {
 
               <div className="full-span inventory-editor">
                 <div className="inventory-editor-header">
+                  <h4>3D model</h4>
+                </div>
+
+                {editingId ? (
+                  <>
+                    <Model3DUpload
+                      productId={editingId}
+                      onUploadSuccess={() => setModelsVersion((version) => version + 1)}
+                    />
+                    <Model3DList productId={editingId} refreshKey={modelsVersion} />
+                  </>
+                ) : (
+                  <>
+                    <Model3DUpload stagedOnly onStagedChange={setPendingModel} />
+                    <p className="m3d-muted">The model is uploaded right after the product is created.</p>
+                  </>
+                )}
+              </div>
+
+              <div className="full-span inventory-editor">
+                <div className="inventory-editor-header">
                   <h4>Variant inventory</h4>
                   <button type="button" className="secondary-button small-button" onClick={handleAddVariant}>Add variant</button>
                 </div>
@@ -1281,26 +1330,6 @@ function ProductsPage() {
                     ) : null}
                   </div>
                 ))}
-              </div>
-
-              <div className="full-span inventory-editor">
-                <div className="inventory-editor-header">
-                  <h4>3D models</h4>
-                </div>
-
-                {editingId ? (
-                  <>
-                    <Model3DUpload
-                      productId={editingId}
-                      onUploadSuccess={() => setModelsVersion((version) => version + 1)}
-                    />
-                    <Model3DList productId={editingId} refreshKey={modelsVersion} />
-                  </>
-                ) : (
-                  <p className="empty-state-copy">
-                    Save the product first, then edit it or open its details to upload 3D models.
-                  </p>
-                )}
               </div>
 
               <div className="product-form-actions full-span">

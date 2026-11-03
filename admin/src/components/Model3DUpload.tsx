@@ -1,14 +1,21 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FileText, Image as ImageIcon, Upload, X } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
-import { API_BASE, readErrorMessage } from '../lib/config'
-import '../Model3d.css'
+import { uploadProductModel, type StagedModel } from '../lib/models3d'
+import '../Model3D.css'
 
 const MAX_MODEL_MB = 50
 const MAX_PREVIEW_MB = 5
 
 interface Model3DUploadProps {
-  productId: string
+  /** Existing product to upload to. Omit it together with `stagedOnly` when the product doesn't exist yet. */
+  productId?: string
+  /**
+   * Staged mode: only collect the files and report them through `onStagedChange`.
+   * The parent uploads them once the product exists.
+   */
+  stagedOnly?: boolean
+  onStagedChange?: (staged: StagedModel | null) => void
   onUploadSuccess?: (model: Product3DModelItem) => void
   onError?: (error: string) => void
 }
@@ -17,7 +24,7 @@ const isGlb = (file: File) => file.name.toLowerCase().endsWith('.glb')
 const isImage = (file: File) => file.type.startsWith('image/')
 const toMb = (bytes: number) => bytes / 1024 / 1024
 
-export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUploadProps) {
+export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, onUploadSuccess, onError }: Model3DUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [modelFile, setModelFile] = useState<File | null>(null)
@@ -27,6 +34,12 @@ export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUp
 
   const modelInputRef = useRef<HTMLInputElement>(null)
   const previewInputRef = useRef<HTMLInputElement>(null)
+
+  // In staged mode, tell the parent what is currently selected.
+  useEffect(() => {
+    if (!stagedOnly) return
+    onStagedChange?.(modelFile || previewFile ? { modelFile, previewFile, modelName } : null)
+  }, [stagedOnly, onStagedChange, modelFile, previewFile, modelName])
 
   function fail(message: string) {
     setError(message)
@@ -76,27 +89,13 @@ export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUp
   }
 
   async function handleUpload() {
+    if (!productId) return fail('Save the product first, then upload a model.')
     if (!modelFile) return fail('Please select a .glb model file.')
 
     setIsUploading(true)
     setError(null)
     try {
-      const formData = new FormData()
-      formData.append('productId', productId)
-      formData.append('modelFile', modelFile)
-      if (previewFile) formData.append('previewFile', previewFile)
-      if (modelName.trim()) formData.append('modelName', modelName.trim())
-
-      const response = await fetch(`${API_BASE}/api/Product3DModel/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response, `Upload failed (HTTP ${response.status}).`))
-      }
-
-      const result = (await response.json()) as Product3DModelItem
+      const result = await uploadProductModel(productId, { modelFile, previewFile, modelName })
       setModelFile(null)
       setPreviewFile(null)
       setModelName('')
@@ -181,9 +180,11 @@ export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUp
             }}
           />
 
-          <button type="button" className="primary-button" onClick={handleUpload} disabled={isUploading || !modelFile}>
-            {isUploading ? 'Uploading...' : 'Upload model'}
-          </button>
+          {stagedOnly ? null : (
+            <button type="button" className="primary-button" onClick={handleUpload} disabled={isUploading || !modelFile}>
+              {isUploading ? 'Uploading...' : 'Upload model'}
+            </button>
+          )}
         </div>
       ) : null}
     </div>
