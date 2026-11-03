@@ -619,6 +619,7 @@ function ProductsPage() {
               ...variant,
               sizeId: variantWithDimensions.sizeId ?? 1,
               colorId: variantWithDimensions.colorId ?? 1,
+              priceOverride: variant.priceOverride ?? 0,
             }
           })
         : [createVariantTemplate()],
