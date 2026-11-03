@@ -63,17 +63,17 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<WishlistItem> WishlistItems { get; set; }
-    
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            .HasPostgresEnum("address_type", new[] { "shipping", "billing" })
-            .HasPostgresEnum("discount_type", new[] { "percentage", "fixed_amount" })
-            .HasPostgresEnum("order_status", new[] { "pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded" })
-            .HasPostgresEnum("payment_method", new[] { "cod", "gcash", "maya", "card", "bank_transfer" })
-            .HasPostgresEnum("payment_status", new[] { "pending", "authorized", "paid", "failed", "refunded" })
-            .HasPostgresEnum("shipment_status", new[] { "preparing", "in_transit", "delivered", "returned" })
-            .HasPostgresEnum("user_role", new[] { "customer", "admin", "staff" });
+            .HasPostgresEnum<AddressType>("address_type")
+            .HasPostgresEnum<DiscountType>("discount_type")
+            .HasPostgresEnum<OrderStatus>("order_status")
+            .HasPostgresEnum<PaymentMethod>("payment_method")
+            .HasPostgresEnum<PaymentStatus>("payment_status")
+            .HasPostgresEnum<ShipmentStatus>("shipment_status")
+            .HasPostgresEnum<UserRole>("user_role");
 
         modelBuilder.Entity<Address>(entity =>
         {
