@@ -70,6 +70,41 @@ namespace backend.Controllers
             }
         }
 
+        // Public order lookup by order number (e.g. SR-261013-4821) for the tracking page.
+        // Returns a privacy-trimmed view only: no user id, street, phone or email.
+
+        [HttpGet("track/{orderNumber}")]
+        public async Task<IActionResult> TrackOrder(string orderNumber)
+        {
+            try
+            {
+                var key = (orderNumber ?? string.Empty).Trim();
+                if (key.Length == 0 || key.Length > 40)
+                    return NotFound(new { error = "OrderNotFound", message = "No order matches that number." });
+
+                var upper = key.ToUpperInvariant();
+
+                var order = await _context.Orders
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(o => o.OrderItems)
+                    .Include(o => o.Shipments)
+                    .Include(o => o.OrderStatusHistories)
+                    .Include(o => o.FkShippingAddress)
+                    .FirstOrDefaultAsync(o => o.OrderNumber.ToUpper() == upper);
+
+                if (order == null)
+                    return NotFound(new { error = "OrderNotFound", message = "No order matches that number." });
+
+                return Ok(MapToTrackingDto(order));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"=== TRACK ORDER CRASH ===\n{ex}");
+                return StatusCode(500, new { error = "InternalServerError", message = "Could not look up that order right now." });
+            }
+        }
+
         // Changed to support accepting guest cart orders via SessionToken instead of just UserId. This allows guests to checkout without creating an account.
         [HttpPost("checkout")]
         public async Task<IActionResult> Checkout([FromBody] CreateOrderRequest request)
@@ -132,6 +167,7 @@ namespace backend.Controllers
                 var subtotal = cart.CartItems.Sum(ci => (ci.FkProductVariant.PriceOverride ?? ci.FkProductVariant.FkProduct.BasePrice) * ci.Quantity);
 
                 // Format: SR-YYMMDD-XXXX (e.g., SR-261013-4821)
+                // TODO: Maybe change this later since Random() is not guaranteed to be unique.
                 var orderNumber = $"SR-{now:yyMMdd}-{new Random().Next(1000, 10000)}";
 
                 var order = new Order
@@ -180,6 +216,15 @@ namespace backend.Controllers
                     }
 
                     _context.OrderItems.AddRange(orderItems);
+
+                    // Keep the chosen courier so the tracking page can estimate arrival.
+                    // Uses the existing shipments table; staff fill in the tracking number later.
+                    _context.Shipments.Add(new Shipment
+                    {
+                        FkOrderId = order.PkOrderId,
+                        Courier = string.IsNullOrWhiteSpace(request.Courier) ? null : request.Courier.Trim(),
+                        Status = ShipmentStatus.Preparing
+                    });
                     _context.CartItems.RemoveRange(cart.CartItems);
 
                     await _context.SaveChangesAsync();
@@ -199,6 +244,70 @@ namespace backend.Controllers
                 Console.WriteLine($"=== CHECKOUT CRASH ===\n{ex}");
                 return StatusCode(500, new { error = "InternalServerError", message = ex.Message });
             }
+        }
+
+        private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        private static DateTime? AsUtc(DateTime? value) => value.HasValue ? AsUtc(value.Value) : null;
+
+        // "N/A" / "0000" are the placeholders checkout writes for missing guest fields.
+        private static string CleanText(string? value)
+        {
+            var v = (value ?? string.Empty).Trim();
+            return v.Equals("N/A", StringComparison.OrdinalIgnoreCase) ? string.Empty : v;
+        }
+
+        // "Juan Dela Cruz" -> "Juan D."; "Juan" -> "Juan"
+        private static string ShortName(string? fullName)
+        {
+            var parts = CleanText(fullName).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return string.Empty;
+            if (parts.Length == 1) return parts[0];
+            return $"{parts[0]} {char.ToUpperInvariant(parts[^1][0])}.";
+        }
+
+        private static OrderTrackingDTO MapToTrackingDto(Order order)
+        {
+            // Prefer the shipment that has actually moved; otherwise any shipment row.
+            var shipment = order.Shipments
+                .OrderByDescending(s => s.DeliveredAt ?? s.ShippedAt ?? DateTime.MinValue)
+                .FirstOrDefault();
+
+            var events = order.OrderStatusHistories
+                .OrderBy(h => h.ChangedAt)
+                .Select(h => new OrderTrackingEventDTO { Status = h.Status.ToString(), At = AsUtc(h.ChangedAt) })
+                .ToList();
+
+            // Checkout doesn't write a history row, so make sure "Pending" is always there.
+            if (!events.Any(e => e.Status == nameof(OrderStatus.Pending)))
+                events.Insert(0, new OrderTrackingEventDTO { Status = nameof(OrderStatus.Pending), At = AsUtc(order.PlacedAt) });
+
+            var address = order.FkShippingAddress;
+
+            return new OrderTrackingDTO
+            {
+                OrderNumber = order.OrderNumber,
+                Status = order.Status.ToString(),
+                PlacedAt = AsUtc(order.PlacedAt),
+                UpdatedAt = AsUtc(order.UpdatedAt),
+                ItemCount = order.OrderItems.Sum(oi => oi.Quantity),
+                Subtotal = order.Subtotal,
+                DiscountAmount = order.DiscountAmount,
+                ShippingFee = order.ShippingFee,
+                TotalAmount = order.TotalAmount,
+                Courier = string.IsNullOrWhiteSpace(shipment?.Courier) ? null : shipment!.Courier,
+                TrackingNumber = string.IsNullOrWhiteSpace(shipment?.TrackingNumber) ? null : shipment!.TrackingNumber,
+                ShipmentStatus = shipment?.Status.ToString(),
+                ShippedAt = AsUtc(shipment?.ShippedAt),
+                DeliveredAt = AsUtc(shipment?.DeliveredAt),
+                ShipTo = new OrderTrackingShipToDTO
+                {
+                    Name = ShortName(address?.RecipientName),
+                    Barangay = CleanText(address?.Barangay),
+                    City = CleanText(address?.City),
+                    Province = CleanText(address?.Province)
+                },
+                Events = events
+            };
         }
 
         private static OrderDTO MapToOrderDto(Order order)
