@@ -1,7 +1,3 @@
-# Changes in `feature/rein/frontend/cart-feature` vs `staging`
-
-Both branches were compared file by file from their Repomix exports. Text files only: binary assets (PNG and similar) are not in the exports, so any change to them can't be seen here.
-
 ## Summary
 
 The branch adds a working shopping cart. It touches 15 existing files, adds 21 new ones, and removes nothing.
