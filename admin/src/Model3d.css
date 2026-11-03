@@ -2,6 +2,8 @@
    Uses neutral translucent colors so it works in both the light and dark theme
    without depending on App.css variables. */
 
+/*Renamed this file*/
+
 .m3d-stack {
     display: grid;
     gap: 12px;
