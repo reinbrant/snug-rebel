@@ -1,0 +1,91 @@
+/* Styles for Model3DUpload / Model3DList.
+   Uses neutral translucent colors so it works in both the light and dark theme
+   without depending on App.css variables. */
+
+.m3d-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.m3d-dropzone {
+    border: 2px dashed rgba(128, 128, 128, 0.5);
+    background: rgba(128, 128, 128, 0.08);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+    .m3d-dropzone.dragging {
+        border-color: #2d8f5b;
+        background: rgba(45, 143, 91, 0.12);
+    }
+
+    .m3d-dropzone p {
+        margin: 0 0 4px;
+    }
+
+    .m3d-dropzone .m3d-hint {
+        font-size: 0.8rem;
+        opacity: 0.7;
+        margin-bottom: 12px;
+    }
+
+.m3d-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+}
+
+.m3d-selected {
+    display: grid;
+    gap: 8px;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.m3d-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(128, 128, 128, 0.1);
+}
+
+    .m3d-file-row small {
+        display: block;
+        opacity: 0.7;
+    }
+
+.m3d-text-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+.m3d-thumb {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+    display: block;
+}
+
+.m3d-muted {
+    opacity: 0.65;
+    font-size: 0.85rem;
+}
+
+.m3d-row-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}

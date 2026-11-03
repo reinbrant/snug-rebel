@@ -1,6 +1,11 @@
-import { useState, useRef } from 'react'
-import { Upload, X, FileText, Image } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { FileText, Image as ImageIcon, Upload, X } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
+import { API_BASE, readErrorMessage } from '../lib/config'
+import './Model3D.css'
+
+const MAX_MODEL_MB = 50
+const MAX_PREVIEW_MB = 5
 
 interface Model3DUploadProps {
   productId: string
@@ -8,204 +13,175 @@ interface Model3DUploadProps {
   onError?: (error: string) => void
 }
 
+const isGlb = (file: File) => file.name.toLowerCase().endsWith('.glb')
+const isImage = (file: File) => file.type.startsWith('image/')
+const toMb = (bytes: number) => bytes / 1024 / 1024
+
 export function Model3DUpload({ productId, onUploadSuccess, onError }: Model3DUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [modelFile, setModelFile] = useState<File | null>(null)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
   const [modelName, setModelName] = useState('')
-  
+  const [error, setError] = useState<string | null>(null)
+
   const modelInputRef = useRef<HTMLInputElement>(null)
   const previewInputRef = useRef<HTMLInputElement>(null)
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
+  function fail(message: string) {
+    setError(message)
+    onError?.(message)
+  }
+
+  function acceptModel(file: File) {
+    if (!isGlb(file)) return fail('The 3D model must be a .glb file.')
+    if (toMb(file.size) > MAX_MODEL_MB) return fail(`The model is too large. The limit is ${MAX_MODEL_MB} MB.`)
+    setError(null)
+    setModelFile(file)
+  }
+
+  function acceptPreview(file: File) {
+    if (!isImage(file)) return fail('The preview must be an image file.')
+    if (toMb(file.size) > MAX_PREVIEW_MB) return fail(`The preview image is too large. The limit is ${MAX_PREVIEW_MB} MB.`)
+    setError(null)
+    setPreviewFile(file)
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
     setIsDragging(true)
   }
 
-  const handleDragLeave = () => {
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
     setIsDragging(false)
 
-    const files = e.dataTransfer.files
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      if (file.name.endsWith('.glb')) {
-        setModelFile(file)
-      } else if (file.type.startsWith('image/')) {
-        setPreviewFile(file)
-      }
-    }
+    Array.from(event.dataTransfer.files).forEach((file) => {
+      if (isGlb(file)) acceptModel(file)
+      else if (isImage(file)) acceptPreview(file)
+      else fail(`"${file.name}" is not a .glb model or an image.`)
+    })
   }
 
-  const handleModelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && file.name.endsWith('.glb')) {
-      setModelFile(file)
-    }
+  function handleModelSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (file) acceptModel(file)
+    event.target.value = ''
   }
 
-  const handlePreviewFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && file.type.startsWith('image/')) {
-      setPreviewFile(file)
-    }
+  function handlePreviewSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (file) acceptPreview(file)
+    event.target.value = ''
   }
 
-  const handleUpload = async () => {
-    if (!modelFile) {
-      onError?.('Please select a .glb model file')
-      return
-    }
+  async function handleUpload() {
+    if (!modelFile) return fail('Please select a .glb model file.')
 
     setIsUploading(true)
+    setError(null)
     try {
       const formData = new FormData()
       formData.append('productId', productId)
       formData.append('modelFile', modelFile)
-      if (previewFile) {
-        formData.append('previewFile', previewFile)
-      }
-      if (modelName) {
-        formData.append('modelName', modelName)
-      }
+      if (previewFile) formData.append('previewFile', previewFile)
+      if (modelName.trim()) formData.append('modelName', modelName.trim())
 
-      const response = await fetch('http://localhost:5000/api/Product3DModel/upload', {
+      const response = await fetch(`${API_BASE}/api/Product3DModel/upload`, {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Upload failed')
+        throw new Error(await readErrorMessage(response, `Upload failed (HTTP ${response.status}).`))
       }
 
-      const result = await response.json()
-      onUploadSuccess?.(result)
-      
-      // Reset form
+      const result = (await response.json()) as Product3DModelItem
       setModelFile(null)
       setPreviewFile(null)
       setModelName('')
-      if (modelInputRef.current) modelInputRef.current.value = ''
-      if (previewInputRef.current) previewInputRef.current.value = ''
-    } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Upload failed')
+      onUploadSuccess?.(result)
+    } catch (uploadError) {
+      fail(uploadError instanceof Error ? uploadError.message : 'Upload failed.')
     } finally {
       setIsUploading(false)
     }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="m3d-stack">
       <div
+        className={`m3d-dropzone ${isDragging ? 'dragging' : ''}`}
         onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
+        onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'
-        }`}
       >
-        <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-        <p className="text-sm font-medium text-gray-700 mb-2">Drag and drop your 3D model and preview image</p>
-        <p className="text-xs text-gray-500 mb-4">or click to select files</p>
-        
-        <div className="flex gap-2 justify-center">
-          <button
-            onClick={() => modelInputRef.current?.click()}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-          >
-            Select .glb Model
+        <Upload size={28} aria-hidden="true" />
+        <p>
+          <strong>Drag and drop a .glb model and an optional preview image</strong>
+        </p>
+        <p className="m3d-hint">Or choose files with the buttons below. Model up to {MAX_MODEL_MB} MB, preview up to {MAX_PREVIEW_MB} MB.</p>
+
+        <div className="m3d-actions">
+          <button type="button" className="primary-button small-button" onClick={() => modelInputRef.current?.click()}>
+            Select .glb model
           </button>
-          <button
-            onClick={() => previewInputRef.current?.click()}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700"
-          >
-            Select Preview Image
+          <button type="button" className="secondary-button small-button" onClick={() => previewInputRef.current?.click()}>
+            Select preview image
           </button>
         </div>
 
-        <input
-          ref={modelInputRef}
-          type="file"
-          accept=".glb"
-          onChange={handleModelFileSelect}
-          className="hidden"
-        />
-        <input
-          ref={previewInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handlePreviewFileSelect}
-          className="hidden"
-        />
+        <input ref={modelInputRef} type="file" accept=".glb" onChange={handleModelSelect} hidden />
+        <input ref={previewInputRef} type="file" accept="image/*" onChange={handlePreviewSelect} hidden />
       </div>
 
-      {(modelFile || previewFile) && (
-        <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-          {modelFile && (
-            <div className="flex items-center justify-between p-2 bg-blue-50 rounded">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-blue-600" />
-                <div className="text-sm">
-                  <p className="font-medium text-gray-900">{modelFile.name}</p>
-                  <p className="text-xs text-gray-500">{(modelFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setModelFile(null)
-                  if (modelInputRef.current) modelInputRef.current.value = ''
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+      {error ? <div className="error-banner">{error}</div> : null}
 
-          {previewFile && (
-            <div className="flex items-center justify-between p-2 bg-green-50 rounded">
-              <div className="flex items-center gap-2">
-                <Image className="w-4 h-4 text-green-600" />
-                <div className="text-sm">
-                  <p className="font-medium text-gray-900">{previewFile.name}</p>
-                  <p className="text-xs text-gray-500">{(previewFile.size / 1024).toFixed(2)} KB</p>
+      {modelFile || previewFile ? (
+        <div className="m3d-selected">
+          {modelFile ? (
+            <div className="m3d-file-row">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={16} aria-hidden="true" />
+                <div>
+                  <strong>{modelFile.name}</strong>
+                  <small>{toMb(modelFile.size).toFixed(2)} MB</small>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setPreviewFile(null)
-                  if (previewInputRef.current) previewInputRef.current.value = ''
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-4 h-4" />
+              <button type="button" className="icon-button" aria-label="Remove model file" onClick={() => setModelFile(null)}>
+                <X size={16} />
               </button>
             </div>
-          )}
+          ) : null}
+
+          {previewFile ? (
+            <div className="m3d-file-row">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ImageIcon size={16} aria-hidden="true" />
+                <div>
+                  <strong>{previewFile.name}</strong>
+                  <small>{(previewFile.size / 1024).toFixed(1)} KB</small>
+                </div>
+              </div>
+              <button type="button" className="icon-button" aria-label="Remove preview image" onClick={() => setPreviewFile(null)}>
+                <X size={16} />
+              </button>
+            </div>
+          ) : null}
 
           <input
             type="text"
+            className="m3d-text-input"
             placeholder="Model name (optional)"
             value={modelName}
-            onChange={(e) => setModelName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(event) => setModelName(event.target.value)}
           />
 
-          <button
-            onClick={handleUpload}
-            disabled={isUploading || !modelFile}
-            className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {isUploading ? 'Uploading...' : 'Upload Model'}
+          <button type="button" className="primary-button" onClick={handleUpload} disabled={isUploading || !modelFile}>
+            {isUploading ? 'Uploading...' : 'Upload model'}
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

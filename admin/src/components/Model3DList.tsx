@@ -1,129 +1,143 @@
-import { useState, useEffect } from 'react'
-import { Trash2, Eye } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Eye, Trash2 } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
+import { API_BASE, readErrorMessage, resolveAssetUrl } from '../lib/config'
+import './Model3D.css'
 
 interface Model3DListProps {
   productId: string
+  /** Change this value (e.g. increment a counter) to make the list refetch after an upload. */
+  refreshKey?: number
   onModelDeleted?: (modelId: string) => void
 }
 
-export function Model3DList({ productId, onModelDeleted }: Model3DListProps) {
+export function Model3DList({ productId, refreshKey = 0, onModelDeleted }: Model3DListProps) {
   const [models, setModels] = useState<Product3DModelItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const fetchModels = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`${API_BASE}/api/Product3DModel/product/${encodeURIComponent(productId)}`, { signal })
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response, `Failed to load models (HTTP ${response.status}).`))
+        }
+        const data = await response.json()
+        setModels(Array.isArray(data) ? data : [])
+        setError(null)
+      } catch (fetchError) {
+        if (signal.aborted) return
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load models.')
+      } finally {
+        if (!signal.aborted) setIsLoading(false)
+      }
+    },
+    [productId],
+  )
 
   useEffect(() => {
-    fetchModels()
-  }, [productId])
+    const controller = new AbortController()
+    fetchModels(controller.signal)
+    return () => controller.abort()
+  }, [fetchModels, refreshKey])
 
-  const fetchModels = async () => {
+  async function handleDelete(modelId: string) {
+    if (!window.confirm('Are you sure you want to delete this 3D model?')) return
+
+    setDeletingId(modelId)
+    setError(null)
     try {
-      setIsLoading(true)
-      const response = await fetch(`http://localhost:5000/api/Product3DModel/product/${productId}`)
-      if (!response.ok) throw new Error('Failed to fetch models')
-      const data = await response.json()
-      setModels(data)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load models')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDelete = async (modelId: string) => {
-    if (!confirm('Are you sure you want to delete this 3D model?')) return
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/Product3DModel/${modelId}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) throw new Error('Failed to delete model')
-
-      setModels(models.filter((m) => m.id !== modelId))
+      const response = await fetch(`${API_BASE}/api/Product3DModel/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, `Failed to delete model (HTTP ${response.status}).`))
+      }
+      setModels((current) => current.filter((model) => model.id !== modelId))
       onModelDeleted?.(modelId)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete model')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete model.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
-  if (isLoading) {
-    return <div className="text-center py-8 text-gray-500">Loading 3D models...</div>
-  }
-
-  if (error) {
-    return <div className="text-center py-8 text-red-500">{error}</div>
-  }
-
-  if (models.length === 0) {
-    return <div className="text-center py-8 text-gray-500">No 3D models uploaded yet</div>
+  if (isLoading && models.length === 0) {
+    return <p className="empty-state-copy">Loading 3D models...</p>
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b">
-          <tr>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700">Model Name</th>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700">Preview</th>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700">File Size</th>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700">Uploaded</th>
-            <th className="px-4 py-3 text-center font-semibold text-gray-700">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((model) => (
-            <tr key={model.id} className="border-t hover:bg-gray-50">
-              <td className="px-4 py-3 text-gray-900">
-                <a
-                  href={model.modelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline font-medium"
-                >
-                  {model.modelName || 'Untitled Model'}
-                </a>
-              </td>
-              <td className="px-4 py-3">
-                {model.previewImageUrl ? (
-                  <img
-                    src={model.previewImageUrl}
-                    alt={model.modelName || 'Model preview'}
-                    className="h-10 w-10 object-cover rounded"
-                  />
-                ) : (
-                  <span className="text-gray-400 text-xs">No preview</span>
-                )}
-              </td>
-              <td className="px-4 py-3 text-gray-600">
-                {(model.fileSizeBytes / 1024 / 1024).toFixed(2)} MB
-              </td>
-              <td className="px-4 py-3 text-gray-600 text-xs">
-                {new Date(model.createdAt).toLocaleDateString()}
-              </td>
-              <td className="px-4 py-3 text-center">
-                <div className="flex justify-center gap-2">
-                  <a
-                    href={model.modelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </a>
-                  <button
-                    onClick={() => handleDelete(model.id)}
-                    className="p-1 text-red-600 hover:bg-red-50 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="m3d-stack">
+      {error ? <div className="error-banner">{error}</div> : null}
+
+      {models.length === 0 ? (
+        !error ? <p className="empty-state-copy">No 3D models uploaded yet.</p> : null
+      ) : (
+        <div className="inventory-table-wrap">
+          <table className="inventory-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Preview</th>
+                <th>Size</th>
+                <th>Uploaded</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {models.map((model) => {
+                const modelUrl = resolveAssetUrl(model.modelUrl)
+                const previewUrl = resolveAssetUrl(model.previewImageUrl)
+                const label = model.modelName || 'Untitled model'
+
+                return (
+                  <tr key={model.id}>
+                    <td>{label}</td>
+                    <td>
+                      {previewUrl ? (
+                        <img src={previewUrl} alt={`${label} preview`} className="m3d-thumb" />
+                      ) : (
+                        <span className="m3d-muted">No preview</span>
+                      )}
+                    </td>
+                    <td>{(model.fileSizeBytes / 1024 / 1024).toFixed(2)} MB</td>
+                    <td>{new Date(model.createdAt).toLocaleDateString()}</td>
+                    <td>
+                      <span className={`status-pill ${model.isActive ? 'success' : 'neutral'}`}>
+                        {model.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="m3d-row-actions">
+                        <a
+                          href={modelUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="icon-button"
+                          aria-label={`Open ${label}`}
+                        >
+                          <Eye size={16} />
+                        </a>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Delete ${label}`}
+                          disabled={deletingId === model.id}
+                          onClick={() => handleDelete(model.id)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

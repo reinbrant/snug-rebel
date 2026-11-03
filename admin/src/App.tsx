@@ -24,6 +24,9 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { loginWithEmailPassword, loginWithOAuth } from './lib/auth'
+import { API_BASE } from './lib/config'
+import { Model3DList } from './components/Model3DList'
+import { Model3DUpload } from './components/Model3DUpload'
 import type { CategoryItem, CollectionItem, OrderItem, ProductItem, SessionUser } from './types'
 
 const STORAGE_KEY = 'snug-rebel-admin-session'
@@ -196,8 +199,6 @@ const orderSeed: OrderItem[] = [
     ],
   },
 ]
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5146'
 
 const activityFilters = ['All', 'Delivered', 'Pending', 'Processing']
 
@@ -788,6 +789,7 @@ function ProductsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null)
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
+  const [modelsVersion, setModelsVersion] = useState(0)
 
   function handleChange(field: string, value: string | boolean | ProductItem['variants']) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -1111,6 +1113,16 @@ function ProductsPage() {
                 </tbody>
               </table>
             </div>
+
+            <div className="order-items-header">
+              <h4>3D models</h4>
+            </div>
+
+            <Model3DUpload
+              productId={selectedProduct.id}
+              onUploadSuccess={() => setModelsVersion((version) => version + 1)}
+            />
+            <Model3DList productId={selectedProduct.id} refreshKey={modelsVersion} />
 
             <div className="order-items-header">
               <h4>Actions</h4>
