@@ -6,19 +6,12 @@ import PillButton from "../ui/PillButton";
 import { formatCount, formatPrice } from "../../helpers/priceFormat";
 
 type ShopItemCardProps = {
-	/** Item display image URL. */
 	imageSrc: string;
-	/** Item name. Also used as the image alt text. */
 	name: string;
-	/** Regular price in pesos. */
 	price: number;
-	/** Sale price. When set (and lower than `price`), the card shows the discount. */
 	salePrice?: number;
-	/** Star rating, e.g. 4.5. */
 	rating: number;
-	/** Number of reviews. */
 	reviewCount: number;
-	/** Number of items sold. */
 	soldCount: number;
 	/** Units left. Shown as a "5 remaining" tag on the image when the badge is "lowStock". */
 	stockLeft?: number;
@@ -50,7 +43,7 @@ export default function ShopItemCard({
 	href,
 	className = "",
 }: ShopItemCardProps) {
-	const isOnSale = salePrice !== undefined && salePrice < price;
+	const isOnSale = salePrice != null && salePrice < price;
 	const discountPercent = isOnSale
 		? Math.round(((price - salePrice) / price) * 100)
 		: 0;

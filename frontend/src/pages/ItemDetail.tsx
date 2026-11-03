@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { ItemDetail as Item, Review } from "../api/items";
+import { useCart } from "../context/cartContext";
 import AngledButton from "../components/ui/AngledButton";
 import ColorSwatches from "../components/item/ColorSwatches";
 import PillButton from "../components/ui/PillButton";
@@ -64,14 +65,18 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 	);
 	const [quantity, setQuantity] = useState(1);
 
-	const isOnSale =
-		item.salePrice !== undefined && item.salePrice < item.price;
+	const isOnSale = item.salePrice != null && item.salePrice < item.price;
 	const outOfStock = item.stock <= 0;
 
-	const selection = { itemId: item.id, color, size, quantity };
-	// TODO (backend): send `selection` to the cart / checkout endpoints.
-	const handleBuyNow = () => console.log("buy now", selection);
-	const handleAddToBag = () => console.log("add to bag", selection);
+	const { addItem, openCart, busy } = useCart();
+
+	// The size is the variant: the backend finds (or creates) the row for this product + size.
+	const handleAddToBag = async () => {
+		if (!size) return;
+		const ok = await addItem({ productId: item.id, size }, quantity);
+		if (ok) openCart();
+	};
+	const handleBuyNow = handleAddToBag;
 
 	return (
 		<div className="bg-white">
@@ -185,7 +190,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 									<AngledButton
 										variant="buyNow"
 										className="w-full sm:w-56 xl:w-64"
-										disabled={outOfStock}
+										disabled={outOfStock || busy || !size}
 										onClick={handleBuyNow}
 									>
 										Buy Now
@@ -193,7 +198,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 									<AngledButton
 										variant="addToBag"
 										className="w-full sm:w-56 xl:w-64"
-										disabled={outOfStock}
+										disabled={outOfStock || busy || !size}
 										onClick={handleAddToBag}
 									>
 										Add to Bag
