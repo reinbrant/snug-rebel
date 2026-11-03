@@ -44,90 +44,6 @@ const createVariantTemplate = (overrides: Partial<ProductItem['variants'][number
   ...overrides,
 })
 
-const productSeed: ProductItem[] = [
-  {
-    id: 'prd-101',
-    displayId: 'SR-OT-01',
-    slug: 'oversized-tee',
-    name: 'Oversized Tee',
-    category: 'Streetwear',
-    categoryId: 'ctg-streetwear',
-    description: 'Relaxed oversized cotton tee with structured drape.',
-    price: 1299,
-    material: '100% cotton',
-    stock: 42,
-    isActive: true,
-    status: 'Active',
-    sku: 'SR-OT-01',
-    variants: [
-      createVariantTemplate({ id: 'var-ot-s', sku: 'SR-OT-01-S-BLK', size: 'S', color: 'Black', stock: 12 }),
-      createVariantTemplate({ id: 'var-ot-m', sku: 'SR-OT-01-M-BLK', size: 'M', color: 'Black', stock: 14 }),
-      createVariantTemplate({ id: 'var-ot-l', sku: 'SR-OT-01-L-BLK', size: 'L', color: 'Black', stock: 9 }),
-      createVariantTemplate({ id: 'var-ot-xl', sku: 'SR-OT-01-XL-BLK', size: 'XL', color: 'Black', stock: 7 }),
-    ],
-  },
-  {
-    id: 'prd-102',
-    displayId: 'SR-UC-11',
-    slug: 'utility-cargo',
-    name: 'Utility Cargo',
-    category: 'Essentials',
-    categoryId: 'ctg-essentials',
-    description: 'Utility-inspired cargo pant with clean detailing.',
-    price: 1899,
-    material: 'Cotton twill',
-    stock: 11,
-    isActive: true,
-    status: 'Low stock',
-    sku: 'SR-UC-11',
-    variants: [
-      createVariantTemplate({ id: 'var-uc-30', sku: 'SR-UC-11-30-OLV', size: '30', color: 'Olive', stock: 5 }),
-      createVariantTemplate({ id: 'var-uc-32', sku: 'SR-UC-11-32-OLV', size: '32', color: 'Olive', stock: 3 }),
-      createVariantTemplate({ id: 'var-uc-34', sku: 'SR-UC-11-34-OLV', size: '34', color: 'Olive', stock: 3 }),
-    ],
-  },
-  {
-    id: 'prd-103',
-    displayId: 'SR-LS-09',
-    slug: 'lightweight-shell',
-    name: 'Lightweight Shell',
-    category: 'Outerwear',
-    categoryId: 'ctg-outerwear',
-    description: 'Water-resistant shell built for layering.',
-    price: 2399,
-    material: 'Ripstop nylon',
-    stock: 28,
-    isActive: true,
-    status: 'Active',
-    sku: 'SR-LS-09',
-    variants: [
-      createVariantTemplate({ id: 'var-ls-s', sku: 'SR-LS-09-S-ASH', size: 'S', color: 'Ash', stock: 6 }),
-      createVariantTemplate({ id: 'var-ls-m', sku: 'SR-LS-09-M-ASH', size: 'M', color: 'Ash', stock: 7 }),
-      createVariantTemplate({ id: 'var-ls-l', sku: 'SR-LS-09-L-ASH', size: 'L', color: 'Ash', stock: 8 }),
-      createVariantTemplate({ id: 'var-ls-xl', sku: 'SR-LS-09-XL-ASH', size: 'XL', color: 'Ash', stock: 7 }),
-    ],
-  },
-  {
-    id: 'prd-104',
-    displayId: 'SR-CC-22',
-    slug: 'cotton-crew',
-    name: 'Cotton Crew',
-    category: 'Basics',
-    categoryId: 'ctg-basics',
-    description: 'Essential crew top designed for everyday wear.',
-    price: 999,
-    material: 'Organic cotton',
-    stock: 0,
-    isActive: false,
-    status: 'Inactive',
-    sku: 'SR-CC-22',
-    variants: [
-      createVariantTemplate({ id: 'var-cc-s', sku: 'SR-CC-22-S-CRM', size: 'S', color: 'Cream', stock: 0, isActive: false }),
-      createVariantTemplate({ id: 'var-cc-m', sku: 'SR-CC-22-M-CRM', size: 'M', color: 'Cream', stock: 0, isActive: false }),
-    ],
-  },
-]
-
 const categorySeed: CategoryItem[] = [
   { id: 'ctg-1', name: 'Streetwear', slug: 'streetwear', products: 18, status: 'Active' },
   { id: 'ctg-2', name: 'Essentials', slug: 'essentials', products: 24, status: 'Active' },
@@ -773,7 +689,7 @@ function DashboardPage() {
 }
 
 function ProductsPage() {
-  const [products, setProducts] = useState<ProductItem[]>(productSeed)
+  const [products, setProducts] = useState<ProductItem[]>([])
   const [form, setForm] = useState({
     displayId: '',
     slug: '',
@@ -793,6 +709,46 @@ function ProductsPage() {
   const [modelsVersion, setModelsVersion] = useState(0)
   const [pendingModel, setPendingModel] = useState<StagedModel | null>(null)
   const [modelNotice, setModelNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const response = await fetch(`${API_BASE}/api/Product`)
+        if (response.ok) {
+          const data = await response.json()
+          
+          const mappedProducts: ProductItem[] = data.map((p: any) => ({
+            id: p.pkProductId,
+            displayId: p.displayId,
+            slug: p.slug,
+            name: p.productName,
+            category: 'Streetwear', 
+            categoryId: p.fkCategoryId,
+            description: p.description || '',
+            price: p.basePrice || 0,
+            material: p.material || '',
+            stock: p.productVariants ? p.productVariants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0) : 0, 
+            isActive: p.isActive,
+            status: p.isActive ? 'Active' : 'Inactive',
+            sku: p.displayId,
+            variants: p.productVariants ? p.productVariants.map((v: any) => ({
+              id: v.pkProductVariantId,
+              sku: v.sku,
+              size: v.fkSizeId,
+              color: v.fkColorId,
+              stock: v.stockQuantity,
+              priceOverride: v.priceOverride,
+              isActive: v.isActive
+            })) : []
+          }))
+          setProducts(mappedProducts)
+        }
+      } catch (err) {
+        console.error('Failed to load products:', err)
+      }
+    }
+    fetchProducts()
+  }, [])
 
   function handleChange(field: string, value: string | boolean | ProductItem['variants']) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -825,7 +781,7 @@ function ProductsPage() {
     return variants.reduce((sum, variant) => sum + Math.max(0, variant.stock), 0)
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     const normalizedVariants = form.variants
@@ -839,44 +795,87 @@ function ProductsPage() {
 
     const totalStock = getTotalStock(normalizedVariants)
 
-    const nextProduct: ProductItem = {
-      id: editingId ?? `prd-${Date.now()}`,
-      displayId: form.displayId || `SR-${(Math.random() + 1).toString(36).slice(2, 6).toUpperCase()}`,
-      slug: form.slug || (form.name || 'new-product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-      name: form.name || 'New product',
-      category: form.category,
-      categoryId: form.categoryId,
-      description: form.description || 'New product description.',
-      material: form.material || 'Cotton blend',
-      price: Number(form.price) || 0,
-      stock: totalStock,
+    const payload = {
+      pkProductId: editingId || undefined,
+      displayId: form.displayId,
+      slug: form.slug,
+      productName: form.name,
+      fkCategoryId: form.categoryId,
+      description: form.description,
+      basePrice: Number(form.price) || 0,
+      material: form.material,
       isActive: form.isActive,
-      status: form.isActive ? (totalStock <= 0 ? 'Draft' : totalStock < 12 ? 'Low stock' : 'Active') : 'Inactive',
-      sku: form.displayId || `SR-${(Math.random() + 1).toString(36).slice(2, 6).toUpperCase()}`,
-      variants: normalizedVariants,
     }
 
-    if (editingId) {
-      setProducts((current) => current.map((item) => (item.id === editingId ? nextProduct : item)))
-    } else {
-      setProducts((current) => [nextProduct, ...current])
+    try {
+      if (editingId) {
+        const response = await fetch(`${API_BASE}/api/Product/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
 
-      // Upload the 3D model picked in the create form now that the product exists.
-      if (pendingModel?.modelFile) {
-        const staged = pendingModel
-        uploadProductModel(nextProduct.id, staged)
-          .then(() => {
-            setModelsVersion((version) => version + 1)
-            setModelNotice({ tone: 'success', text: `3D model uploaded for ${nextProduct.name}.` })
-          })
-          .catch((uploadError) => {
-            const reason = uploadError instanceof Error ? uploadError.message : 'Upload failed.'
-            setModelNotice({ tone: 'error', text: `${nextProduct.name} was created, but its 3D model was not uploaded: ${reason}` })
-          })
+        if (response.ok) {
+           setProducts((current) =>
+            current.map((item) => (item.id === editingId ? { 
+              ...item, 
+              name: form.name, 
+              price: Number(form.price), 
+              isActive: form.isActive,
+              displayId: form.displayId,
+              slug: form.slug,
+              description: form.description,
+              material: form.material
+            } : item))
+          )
+        }
+      } else {
+        const response = await fetch(`${API_BASE}/api/Product`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        if (response.ok) {
+          const createdProduct = await response.json()
+          
+          const nextProduct: ProductItem = {
+            id: createdProduct.pkProductId,
+            displayId: createdProduct.displayId,
+            slug: createdProduct.slug,
+            name: createdProduct.productName,
+            category: form.category,
+            categoryId: createdProduct.fkCategoryId,
+            description: createdProduct.description,
+            material: createdProduct.material,
+            price: createdProduct.basePrice,
+            stock: totalStock,
+            isActive: createdProduct.isActive,
+            status: createdProduct.isActive ? (totalStock <= 0 ? 'Draft' : totalStock < 12 ? 'Low stock' : 'Active') : 'Inactive',
+            sku: createdProduct.displayId,
+            variants: normalizedVariants,
+          }
+
+          setProducts((current) => [nextProduct, ...current])
+
+          if (pendingModel?.modelFile) {
+            uploadProductModel(nextProduct.id, pendingModel)
+              .then(() => {
+                setModelsVersion((version) => version + 1)
+                setModelNotice({ tone: 'success', text: `3D model uploaded for ${nextProduct.name}.` })
+              })
+              .catch((uploadError) => {
+                const reason = uploadError instanceof Error ? uploadError.message : 'Upload failed.'
+                setModelNotice({ tone: 'error', text: `${nextProduct.name} was created, but its 3D model was not uploaded: ${reason}` })
+              })
+          }
+        }
       }
+    } catch (err) {
+       console.error('Error saving product:', err)
     }
-    setPendingModel(null)
 
+    setPendingModel(null)
     setForm({
       displayId: '',
       slug: '',
@@ -907,27 +906,37 @@ function ProductsPage() {
       price: String(product.price),
       stock: String(product.stock),
       isActive: product.isActive,
-      variants: product.variants.length ? product.variants : [createVariantTemplate()],
+      variants: product.variants && product.variants.length > 0 ? product.variants : [createVariantTemplate()],
     })
     setIsProductModalOpen(true)
   }
 
-  function handleDeactivate(id: string) {
-    setProducts((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              isActive: false,
-              status: 'Inactive',
-              variants: item.variants.map((variant) => ({ ...variant, isActive: false })),
-            }
-          : item,
-      ),
-    )
-    setSelectedProduct((current) =>
-      current && current.id === id ? { ...current, isActive: false, status: 'Inactive', variants: current.variants.map((variant) => ({ ...variant, isActive: false })) } : current,
-    )
+  async function handleDeactivate(id: string) {
+    try {
+      const response = await fetch(`${API_BASE}/api/Product/${id}/deactivate`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        setProducts((current) =>
+          current.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  isActive: false,
+                  status: 'Inactive',
+                  variants: item.variants.map((variant) => ({ ...variant, isActive: false })),
+                }
+              : item,
+          ),
+        )
+        setSelectedProduct((current) =>
+          current && current.id === id ? { ...current, isActive: false, status: 'Inactive', variants: current.variants.map((variant) => ({ ...variant, isActive: false })) } : current,
+        )
+      }
+    } catch (err) {
+      console.error('Failed to deactivate product', err)
+    }
   }
 
   function openProductDetails(product: ProductItem) {
@@ -1098,7 +1107,7 @@ function ProductsPage() {
                   </div>
                   <div>
                     <label>Variants</label>
-                    <span>{selectedProduct.variants.length} options</span>
+                    <span>{selectedProduct.variants ? selectedProduct.variants.length : 0} options</span>
                   </div>
                 </div>
               </div>
@@ -1125,7 +1134,7 @@ function ProductsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedProduct.variants.map((variant) => (
+                  {selectedProduct.variants && selectedProduct.variants.map((variant) => (
                     <tr key={variant.id}>
                       <td>{variant.sku}</td>
                       <td>{variant.size}</td>
