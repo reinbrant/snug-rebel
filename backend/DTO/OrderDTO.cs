@@ -3,14 +3,42 @@ using System.Collections.Generic;
 
 namespace backend.DTO
 {
+    public class DirectOrderItemRequest
+    {
+        public string ProductId { get; set; } = string.Empty;
+        public string? Size { get; set; }
+        public string? Color { get; set; }
+        public int Quantity { get; set; } = 1;
+    }
+
     public class CreateOrderRequest
     {
         public string? UserId { get; set; }
+        public string? SessionToken { get; set; }
         public string? CartId { get; set; }
         public string? ShippingAddressId { get; set; }
         public string? BillingAddressId { get; set; }
         public decimal ShippingFee { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public string? VoucherCode { get; set; }
+        public string? Courier { get; set; }
+        public string? PaymentMethod { get; set; }
         public string? CustomerNote { get; set; }
+
+        // Raw address fields for inline guest address creation;
+        // if ShippingAddressId or BillingAddressId is not provided, these fields will be used to create new addresses.
+        // mainly used for guest checkout, where the user may not have saved information.
+        public string? RecipientName { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+        public string? Line1 { get; set; }
+        public string? Barangay { get; set; }
+        public string? City { get; set; }
+        public string? Province { get; set; }
+        public string? PostalCode { get; set; }
+
+        // Optional direct items for "Buy Now" single-item checkout
+        public List<DirectOrderItemRequest>? DirectItems { get; set; }
     }
 
     public class OrderDTO

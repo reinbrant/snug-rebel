@@ -70,70 +70,82 @@ namespace backend.Controllers
             }
         }
 
+        // Changed to support accepting guest cart orders via SessionToken instead of just UserId. This allows guests to checkout without creating an account.
         [HttpPost("checkout")]
         public async Task<IActionResult> Checkout([FromBody] CreateOrderRequest request)
         {
             try
             {
-                if (request == null)
-                {
-                    return BadRequest(new { error = "NullRequestBody", message = "Request body cannot be null." });
-                }
+                if (request == null) return BadRequest(new { error = "NullRequestBody", message = "Request body cannot be null." });
 
                 string? normalizedUserId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
-                string? normalizedCartId = string.IsNullOrWhiteSpace(request.CartId) ? null : request.CartId.Trim();
-                string? normalizedShippingAddressId = string.IsNullOrWhiteSpace(request.ShippingAddressId) ? null : request.ShippingAddressId.Trim();
-                string? normalizedBillingAddressId = string.IsNullOrWhiteSpace(request.BillingAddressId) ? null : request.BillingAddressId.Trim();
+                string? normalizedSessionToken = string.IsNullOrWhiteSpace(request.SessionToken) ? null : request.SessionToken.Trim();
 
-                if (normalizedUserId == null) return BadRequest(new { error = "InvalidUserId", message = "A valid UserId must be provided." });
-                if (normalizedShippingAddressId == null) return BadRequest(new { error = "MissingShippingAddress", message = "A ShippingAddressId must be provided." });
-                if (request.ShippingFee < 0) return BadRequest(new { error = "InvalidShippingFee", message = "ShippingFee cannot be negative." });
-
-                var userExists = await _context.Users.AnyAsync(u => u.PkUserId == normalizedUserId);
-                if (!userExists) return NotFound(new { error = "UserNotFound", message = $"User with ID '{normalizedUserId}' was not found." });
-
-                var shippingAddress = await _context.Addresses.FirstOrDefaultAsync(a => a.PkAddressId == normalizedShippingAddressId && a.FkUserId == normalizedUserId);
-                if (shippingAddress == null) return NotFound(new { error = "ShippingAddressNotFound", message = "The shipping address was not found for this user." });
-
-                Address? billingAddress = null;
-                if (normalizedBillingAddressId != null)
-                {
-                    billingAddress = await _context.Addresses.FirstOrDefaultAsync(a => a.PkAddressId == normalizedBillingAddressId && a.FkUserId == normalizedUserId);
-                    if (billingAddress == null) return NotFound(new { error = "BillingAddressNotFound", message = "The billing address was not found for this user." });
-                }
+                if (normalizedUserId == null && normalizedSessionToken == null)
+                    return BadRequest(new { error = "InvalidIdentifier", message = "A UserId or SessionToken must be provided." });
 
                 var cart = await _context.Carts
                     .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkProduct)
                     .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkSize)
                     .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkColor)
-                    .FirstOrDefaultAsync(c => c.FkUserId == normalizedUserId && (normalizedCartId == null || c.PkCartId == normalizedCartId));
+                    .FirstOrDefaultAsync(c =>
+                        (normalizedUserId != null && c.FkUserId == normalizedUserId) ||
+                        (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
 
-                if (cart == null) return NotFound(new { error = "CartNotFound", message = $"No cart was found for User ID '{normalizedUserId}'." });
+                if (cart == null) return NotFound(new { error = "CartNotFound", message = "No active cart was found." });
                 if (!cart.CartItems.Any()) return BadRequest(new { error = "EmptyCart", message = "Cannot place an order because the cart is empty." });
 
-                foreach (var cartItem in cart.CartItems)
+                // 1. Resolve Shipping Address (Create one if guest)
+                string shippingAddressId = request.ShippingAddressId ?? string.Empty;
+                if (string.IsNullOrEmpty(shippingAddressId))
                 {
-                    var variant = cartItem.FkProductVariant;
-                    if (cartItem.Quantity <= 0) return BadRequest(new { error = "InvalidQuantity", message = $"Cart item '{cartItem.PkCartItemId}' must have a quantity greater than zero." });
-                    if (!variant.IsActive) return Conflict(new { error = "ProductVariantInactive", message = $"Product variant '{variant.PkProductVariantId}' is no longer available." });
-                    if (variant.StockQuantity < cartItem.Quantity) return Conflict(new { error = "InsufficientStock", message = $"Not enough stock for '{variant.PkProductVariantId}'. Available: {variant.StockQuantity}, requested: {cartItem.Quantity}." });
+                    var newAddress = new Address
+                    {
+                        FkUserId = normalizedUserId, // Will be null for guests
+                        RecipientName = request.RecipientName ?? "Guest",
+                        Phone = request.Phone ?? "0000",
+                        Line1 = request.Line1 ?? "N/A",
+                        Barangay = request.Barangay ?? "N/A",
+                        City = request.City ?? "N/A",
+                        Province = request.Province ?? "N/A",
+                        PostalCode = request.PostalCode ?? "0000",
+                        Country = "PH",
+                        IsDefault = true,
+                        AddressType = AddressType.Shipping,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.Addresses.Add(newAddress);
+                    await _context.SaveChangesAsync();
+                    shippingAddressId = newAddress.PkAddressId;
+                }
+
+                // 2. Resolve Promo Code
+                string? promoId = null;
+                if (!string.IsNullOrWhiteSpace(request.VoucherCode))
+                {
+                    var promo = await _context.PromoCodes.FirstOrDefaultAsync(p => p.Promocode.ToLower() == request.VoucherCode.ToLower() && p.IsActive);
+                    promoId = promo?.PkPromoCodeId;
                 }
 
                 var now = DateTime.UtcNow;
                 var subtotal = cart.CartItems.Sum(ci => (ci.FkProductVariant.PriceOverride ?? ci.FkProductVariant.FkProduct.BasePrice) * ci.Quantity);
 
+                // Format: SR-YYMMDD-XXXX (e.g., SR-261013-4821)
+                var orderNumber = $"SR-{now:yyMMdd}-{new Random().Next(1000, 10000)}";
+
                 var order = new Order
                 {
-                    OrderNumber = $"ORD-{now:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..8]}",
-                    FkUserId = normalizedUserId,
-                    FkPromoCodeId = null,
-                    FkShippingAddressId = shippingAddress.PkAddressId,
-                    FkBillingAddressId = billingAddress?.PkAddressId,
+                    OrderNumber = orderNumber,
+                    FkUserId = normalizedUserId ?? "guest", // Required by DB; use placeholder if guest
+                    FkPromoCodeId = promoId,
+                    FkShippingAddressId = shippingAddressId,
                     Subtotal = subtotal,
-                    DiscountAmount = 0m,
+                    DiscountAmount = request.DiscountAmount,
                     ShippingFee = request.ShippingFee,
-                    TotalAmount = subtotal + request.ShippingFee,
-                    CustomerNote = string.IsNullOrWhiteSpace(request.CustomerNote) ? null : request.CustomerNote.Trim(),
+                    TotalAmount = Math.Max(0, subtotal + request.ShippingFee - request.DiscountAmount),
+                    CustomerNote = request.CustomerNote,
+                    Status = OrderStatus.Pending,
                     PlacedAt = now,
                     UpdatedAt = now
                 };
@@ -179,13 +191,13 @@ namespace backend.Controllers
                 catch (Exception dbEx)
                 {
                     await transaction.RollbackAsync();
-                    throw dbEx; // Pass it to the outer catch block
+                    throw dbEx;
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"=== CHECKOUT CRASH ===\n{ex}");
-                return StatusCode(500, new { error = "InternalServerError", message = ex.Message, stackTrace = ex.ToString() });
+                return StatusCode(500, new { error = "InternalServerError", message = ex.Message });
             }
         }
 

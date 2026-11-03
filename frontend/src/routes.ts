@@ -3,6 +3,7 @@ export const ROUTES = {
   shop: '/shop',
   about: '/about',
   orders: '/orders',
+  checkout: '/checkout'
 } as const
 
 export type Page = keyof typeof ROUTES

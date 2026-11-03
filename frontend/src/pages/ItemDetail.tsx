@@ -12,6 +12,7 @@ import StarRating from "../components/ui/StarRating";
 import { formatPrice } from "../helpers/priceFormat";
 import { useItemDetail } from "../hooks/useItemDetail";
 import { ROUTES } from "../routes";
+import type { CartLine } from "../api/cart";
 
 const fieldLabel =
 	"font-display text-[1.75rem] font-bold leading-none [font-stretch:62%]";
@@ -65,18 +66,37 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 	);
 	const [quantity, setQuantity] = useState(1);
 
+	const navigate = useNavigate();
+
 	const isOnSale = item.salePrice != null && item.salePrice < item.price;
 	const outOfStock = item.stock <= 0;
 
 	const { addItem, openCart, busy } = useCart();
 
-	// The size is the variant: the backend finds (or creates) the row for this product + size.
 	const handleAddToBag = async () => {
 		if (!size) return;
 		const ok = await addItem({ productId: item.id, size }, quantity);
 		if (ok) openCart();
 	};
-	const handleBuyNow = handleAddToBag;
+
+	const handleBuyNow = () => {
+		if (!size) return;
+
+		const buyNowItem: CartLine = {
+			id: "buynow-" + Date.now(),
+			variantId: `var_${item.id}_${size}`,
+			productId: item.id,
+			name: item.name,
+			imageUrl: item.imageSrc,
+			unitPrice: item.salePrice ?? item.price,
+			color: color || item.colors?.[0]?.name || "Standard",
+			size: size,
+			quantity: quantity,
+			stock: item.stock,
+		};
+
+		navigate(ROUTES.checkout, { state: { buyNowItems: [buyNowItem] } });
+	};
 
 	return (
 		<div className="bg-white">

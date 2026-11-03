@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import type { CartLine } from "../../api/cart";
@@ -69,6 +70,7 @@ const stepperButton =
 	"hover:bg-brand-red active:scale-90 disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function CartDrawer() {
+	const navigate = useNavigate();
 	const {
 		lines,
 		itemCount,
@@ -117,7 +119,6 @@ export default function CartDrawer() {
 		[],
 	);
 
-	// Close on Escape. While the confirm dialog is open, Escape only closes the dialog.
 	useEffect(() => {
 		if (!isOpen) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -142,7 +143,6 @@ export default function CartDrawer() {
 				closing ? "pointer-events-none" : "",
 			].join(" ")}
 		>
-			{/* Dimmed backdrop (fades), click to close */}
 			<div
 				onClick={requestClose}
 				aria-hidden="true"
@@ -160,7 +160,6 @@ export default function CartDrawer() {
 				].join(" ")}
 				style={{ backgroundImage: `url(${starBg})` }}
 			>
-				{/* Close button: the two SVG states cross-fade; they already contain the X */}
 				<button
 					type="button"
 					onClick={requestClose}
@@ -312,7 +311,7 @@ export default function CartDrawer() {
 															type="button"
 															disabled={busy}
 															onClick={() =>
-																// at 1, "-" means delete, so confirm first
+																// at qty 1, "-" means delete, so confirm first
 																line.quantity <=
 																1
 																	? setPendingLine(
@@ -384,14 +383,12 @@ export default function CartDrawer() {
 							</p>
 						</div>
 
-						{/* Checkout: the two SVG states already contain the "Check out" text and its tilt.
-						    They cross-fade on hover; the whole button presses down on click. */}
 						<button
 							type="button"
 							disabled={busy}
 							onClick={() => {
-								requestClose();
-								// Navigate to checkout when route is ready
+								closeCart();
+								navigate(ROUTES.checkout);
 							}}
 							aria-label="Check out"
 							className="group relative h-20 w-56 shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50"
