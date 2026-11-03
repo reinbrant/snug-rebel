@@ -897,7 +897,8 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
             entity.Property(e => e.Role)
-                .HasColumnName("role");
+                .HasColumnName("role")
+                .HasColumnType("user_role");
             entity.Property(e => e.UserEmail)
                 .HasMaxLength(255)
                 .HasColumnName("user_email");
