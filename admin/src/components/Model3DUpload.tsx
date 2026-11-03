@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { FileText, Image as ImageIcon, Upload, X } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
 import { API_BASE, readErrorMessage } from '../lib/config'
-import './Model3d.css'
+import '../Model3d.css'
 
 const MAX_MODEL_MB = 50
 const MAX_PREVIEW_MB = 5

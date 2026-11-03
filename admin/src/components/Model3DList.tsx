@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Eye, Trash2 } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
 import { API_BASE, readErrorMessage, resolveAssetUrl } from '../lib/config'
-import './Model3d.css'
+import '../Model3d.css'
 
 interface Model3DListProps {
   productId: string
