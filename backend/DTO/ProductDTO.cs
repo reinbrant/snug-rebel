@@ -13,6 +13,8 @@ public class ProductListDTO
     public int? StockLeft { get; init; }
     public string? Badge { get; init; }
     public List<string> Categories { get; init; } = new();
+
+    public string? DefaultVariantId { get; init; }
 }
 
 public class ProductDetailDTO
@@ -29,10 +31,13 @@ public class ProductDetailDTO
     public int Stock { get; init; } = 0;
     public List<ColorDTO> Colors { get; init; } = new();
     public List<SizeDTO> Sizes { get; init; } = new();
+
+    public List<VariantDTO> Variants { get; init; } = new();
 }
 
 public record ColorDTO(string Name, string Hex);
 public record SizeDTO(string Label, bool Available);
+public record VariantDTO(string Id, string Color, string Size, int Stock, decimal? PriceOverride);
 
 public record CreateProductRequest(
     string DisplayId,

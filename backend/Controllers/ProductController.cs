@@ -47,6 +47,12 @@ public class ProductController : ControllerBase
                     Id = p.PkProductId,
                     Name = p.ProductName ?? string.Empty,
                     Price = p.BasePrice,
+                    SalePrice = null,
+                    Rating = 5,
+                    ReviewCount = 0,
+                    SoldCount = 0,
+                    StockLeft = null,
+                    Badge = null,
                     ImageSrc = p.ProductImages
                         .Where(img => img.IsPrimary)
                         .Select(img => img.Url)
@@ -70,9 +76,37 @@ public class ProductController : ControllerBase
         {
             var product = await _context.Products
                 .Include(p => p.ProductImages)
+                .Include(p => p.ProductVariants).ThenInclude(v => v.FkColor)
+                .Include(p => p.ProductVariants).ThenInclude(v => v.FkSize)
                 .FirstOrDefaultAsync(p => p.PkProductId == id);
 
             if (product == null) return NotFound();
+
+            var activeVariants = product.ProductVariants.Where(v => v.IsActive).ToList();
+
+            // Sizes are variants. Variant rows are created the first time a size is added to a cart,
+            // so always offer the standard sizes, and mark one unavailable only if its row exists with 0 stock.
+            var standardSizes = new[] { "S", "M", "L", "XL" };
+            var bySize = activeVariants
+                .GroupBy(v => v.FkSize.Label.ToUpper())
+                .ToDictionary(g => g.Key, g => new { InStock = g.Any(v => v.StockQuantity > 0), Order = g.Min(v => v.FkSize.SortOrder) });
+
+            var sizes = standardSizes
+                .Select((label, i) => (Label: label, Order: i, Available: !bySize.TryGetValue(label, out var info) || info.InStock))
+                .Concat(bySize
+                    .Where(kv => !standardSizes.Contains(kv.Key))
+                    .Select(kv => (Label: kv.Key, Order: 100 + kv.Value.Order, Available: kv.Value.InStock)))
+                .OrderBy(x => x.Order)
+                .Select(x => new SizeDTO(x.Label, x.Available))
+                .ToList();
+
+            var colors = activeVariants.Any()
+                ? activeVariants
+                    .Select(v => v.FkColor)
+                    .DistinctBy(c => c.PkColorId)
+                    .Select(c => new ColorDTO(c.Name, c.HexCode))
+                    .ToList()
+                : new List<ColorDTO> { new ColorDTO("Standard", "#000000") };
 
             var detail = new ProductDetailDTO
             {
@@ -80,18 +114,16 @@ public class ProductController : ControllerBase
                 Name = product.ProductName ?? string.Empty,
                 Description = product.Description ?? string.Empty,
                 Price = product.BasePrice,
-                ImageSrc = product.ProductImages?.FirstOrDefault(img => img.IsPrimary)?.Url 
-                           ?? product.ProductImages?.FirstOrDefault()?.Url 
-                           ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='710' height='981'><rect width='710' height='981' fill='%237a7a7a'/></svg>",
-                Stock = 10,
-                Colors = new List<ColorDTO>
-                {
-                    new("Standard", "#000000")
-                },
-                Sizes = new List<SizeDTO>
-                {
-                    new("S", true), new("M", true), new("L", true), new("XL", true)
-                }
+                SalePrice = null,
+                Rating = 5.0,
+                ReviewCount = 0,
+                SoldCount = 0,
+                ImageSrc = product.ProductImages?.FirstOrDefault(img => img.IsPrimary)?.Url
+                            ?? product.ProductImages?.FirstOrDefault()?.Url
+                            ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='710' height='981'><rect width='710' height='981' fill='%237a7a7a'/></svg>",
+                Stock = activeVariants.Any() ? activeVariants.Sum(v => v.StockQuantity) : 10,
+                Colors = colors,
+                Sizes = sizes
             };
 
             return Ok(detail);
