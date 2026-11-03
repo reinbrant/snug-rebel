@@ -42,7 +42,16 @@ dataSourceBuilder.MapEnum<UserRole>("user_role");
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(dataSource));
+    options.UseNpgsql(dataSource, o =>
+    {
+        o.MapEnum<AddressType>("address_type");
+        o.MapEnum<DiscountType>("discount_type");
+        o.MapEnum<OrderStatus>("order_status");
+        o.MapEnum<PaymentMethod>("payment_method");
+        o.MapEnum<PaymentStatus>("payment_status");
+        o.MapEnum<ShipmentStatus>("shipment_status");
+        o.MapEnum<UserRole>("user_role");
+    }));
 
 var app = builder.Build();
 
