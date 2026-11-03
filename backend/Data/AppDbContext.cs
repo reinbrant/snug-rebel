@@ -899,6 +899,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Role)
                 .HasColumnName("role")
                 .HasColumnType("user_role");
+                .HasConversion(
+                    v => v.ToString().ToLower(),
+                    v => (UserRole)Enum.Parse(typeof(UserRole), v, true)
+                );
             entity.Property(e => e.UserEmail)
                 .HasMaxLength(255)
                 .HasColumnName("user_email");
