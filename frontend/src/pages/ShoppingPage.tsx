@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import { useCart } from "../context/cartContext";
 import PillButton from "../components/ui/PillButton";
 import ShopItemCard from "../components/shop/ShopItemCard";
 import ShopSidebar from "../components/shop/ShopSidebar";
@@ -28,13 +29,17 @@ export default function Shop() {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-    getProducts()
-        .then(setProductsData)
-        .catch((err) => {
-            setError(err instanceof Error ? err.message : "Failed to load products");
-        })
-        .finally(() => setLoading(false));
-}, []);
+		getProducts()
+			.then(setProductsData)
+			.catch((err) => {
+				setError(
+					err instanceof Error
+						? err.message
+						: "Failed to load products",
+				);
+			})
+			.finally(() => setLoading(false));
+	}, []);
 
 	const [sort, setSort] = useState<SortKey>("best-selling");
 
@@ -54,11 +59,16 @@ export default function Shop() {
 		return [...filtered].sort(SORTERS[sort]);
 	}, [productsData, sort, category]);
 
-	// TODO: hook these up to your cart / checkout.
-	const handleBuyNow = (product: Product) =>
-		console.log("buy now", product.id);
-	const handleAddToCart = (product: Product) =>
-		console.log("add to cart", product.id);
+	const { addItem, openCart } = useCart();
+
+	// No size picked on a card: the backend uses the product's default size
+	const addDefaultSize = async (product: Product) => {
+		const ok = await addItem({ productId: product.id }, 1);
+		if (ok) openCart();
+	};
+
+	const handleBuyNow = addDefaultSize;
+	const handleAddToCart = addDefaultSize;
 
 	return (
 		<div>
@@ -79,7 +89,9 @@ export default function Shop() {
 					) : error ? (
 						<div className="flex flex-col items-start gap-4 pt-16">
 							<p>Failed to load products: {error}</p>
-							<PillButton onClick={() => window.location.reload()}>
+							<PillButton
+								onClick={() => window.location.reload()}
+							>
 								Try again
 							</PillButton>
 						</div>
