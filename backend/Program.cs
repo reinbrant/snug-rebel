@@ -27,31 +27,16 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
-// Database and Enum Configuration
+// Database configuration
+// NOTE: enums are NOT mapped as native Postgres enums. The existing tables store them as plain
+// integers (see InitialCreate and the SQL seed scripts), so EF writes them as int by default.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-
-dataSourceBuilder.MapEnum<AddressType>("address_type");
-dataSourceBuilder.MapEnum<DiscountType>("discount_type");
-dataSourceBuilder.MapEnum<OrderStatus>("order_status");
-dataSourceBuilder.MapEnum<PaymentMethod>("payment_method");
-dataSourceBuilder.MapEnum<PaymentStatus>("payment_status");
-dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status");
-dataSourceBuilder.MapEnum<UserRole>("user_role");
 
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(dataSource, o =>
-    {
-        o.MapEnum<AddressType>("address_type");
-        o.MapEnum<DiscountType>("discount_type");
-        o.MapEnum<OrderStatus>("order_status");
-        o.MapEnum<PaymentMethod>("payment_method");
-        o.MapEnum<PaymentStatus>("payment_status");
-        o.MapEnum<ShipmentStatus>("shipment_status");
-        o.MapEnum<UserRole>("user_role");
-    }));
+    options.UseNpgsql(dataSource));
 
 var app = builder.Build();
 

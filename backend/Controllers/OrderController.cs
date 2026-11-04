@@ -113,7 +113,12 @@ namespace backend.Controllers
             {
                 if (request == null) return BadRequest(new { error = "NullRequestBody", message = "Request body cannot be null." });
 
-                string? normalizedUserId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
+                // Fall back to "usr-guest-user" if no user is logged in.
+                string? normalizedUserId = string.IsNullOrWhiteSpace(request.UserId) ? "usr-guest-user" : request.UserId.Trim();
+                if (!string.IsNullOrEmpty(normalizedUserId) && normalizedUserId.Length > 40)
+                {
+                    normalizedUserId = normalizedUserId.Substring(0, 40);
+                }
                 string? normalizedSessionToken = string.IsNullOrWhiteSpace(request.SessionToken) ? null : request.SessionToken.Trim();
 
                 if (normalizedUserId == null && normalizedSessionToken == null)
@@ -173,7 +178,7 @@ namespace backend.Controllers
                 var order = new Order
                 {
                     OrderNumber = orderNumber,
-                    FkUserId = normalizedUserId ?? "guest", // Required by DB; use placeholder if guest
+                    FkUserId = normalizedUserId,
                     FkPromoCodeId = promoId,
                     FkShippingAddressId = shippingAddressId,
                     Subtotal = subtotal,
@@ -221,6 +226,7 @@ namespace backend.Controllers
                     // Uses the existing shipments table; staff fill in the tracking number later.
                     _context.Shipments.Add(new Shipment
                     {
+                        PkShipmentId = "ship-" + Guid.NewGuid().ToString("N").Substring(0, 24), // Ensures it fits in varchar(40)
                         FkOrderId = order.PkOrderId,
                         Courier = string.IsNullOrWhiteSpace(request.Courier) ? null : request.Courier.Trim(),
                         Status = ShipmentStatus.Preparing

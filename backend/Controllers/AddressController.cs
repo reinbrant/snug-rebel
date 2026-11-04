@@ -42,12 +42,18 @@ public class AddressController : ControllerBase
 
     // Revised for guest checkout support: if FkUserId is null, the address is treated as a guest address and not linked to any user.
     [HttpPost("create")]
-    public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
+public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
     {
         try
         {
             if (request == null) return BadRequest(new { error = "NullRequest", message = "Request body is empty." });
             
+            // Truncate user ID if it exceeds the 40-character database column limit
+            if (!string.IsNullOrEmpty(request.FkUserId) && request.FkUserId.Length > 40)
+            {
+                request.FkUserId = request.FkUserId.Substring(0, 40);
+            }
+
             if (!string.IsNullOrEmpty(request.FkUserId))
             {
                 var userExists = await _context.Users.AnyAsync(u => u.PkUserId == request.FkUserId);

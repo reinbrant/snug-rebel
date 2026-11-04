@@ -66,15 +66,7 @@ public partial class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder
-            .HasPostgresEnum<AddressType>("address_type")
-            .HasPostgresEnum<DiscountType>("discount_type")
-            .HasPostgresEnum<OrderStatus>("order_status")
-            .HasPostgresEnum<PaymentMethod>("payment_method")
-            .HasPostgresEnum<PaymentStatus>("payment_status")
-            .HasPostgresEnum<ShipmentStatus>("shipment_status")
-            .HasPostgresEnum<UserRole>("user_role");
-
+        
         modelBuilder.Entity<Address>(entity =>
         {
             entity.HasKey(e => e.PkAddressId).HasName("addresses_pkey");
