@@ -20,6 +20,7 @@ namespace backend.Controllers
         private IQueryable<Cart> QueryCartWithDetails()
         {
             return _context.Carts
+                .AsSplitQuery()
                 .Include(c => c.CartItems)
                     .ThenInclude(ci => ci.FkProductVariant)
                         .ThenInclude(pv => pv.FkProduct)
@@ -141,14 +142,8 @@ namespace backend.Controllers
                     }
                     else
                     {
-                        // The DB default id ('c-item' + a 36 char uuid = 42 chars) overflows the varchar(40) column,
-                        // so build one that fits: 'c-item' + 32 hex chars = 38.
-                        // Because the key is set by us, EF would treat an item added via cart.CartItems.Add(...)
-                        // as an existing row and send an UPDATE (0 rows affected). Adding it through the DbSet
-                        // forces INSERT; setting FkCart keeps cart.CartItems in sync.
                         var newItem = new CartItem
                         {
-                            PkCartItemId = "c-item" + Guid.NewGuid().ToString("N"),
                             FkCart = cart,
                             FkProductVariantId = variant.PkProductVariantId,
                             Quantity = item.Quantity,
@@ -275,11 +270,14 @@ namespace backend.Controllers
                     .FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
 
+                var cartId = cartItem.FkCartId;
+
                 if (request.Quantity is <= 0)
                 {
                     _context.CartItems.Remove(cartItem);
                     await _context.SaveChangesAsync();
-                    return Ok(new { message = $"Cart item '{cartItemId}' removed successfully." });
+                    var hydratedCart = await QueryCartWithDetails().FirstAsync(c => c.PkCartId == cartId);
+                    return Ok(MapToCartDto(hydratedCart));
                 }
 
                 var quantity = request.Quantity ?? cartItem.Quantity;
@@ -317,7 +315,8 @@ namespace backend.Controllers
                         }
 
                         await _context.SaveChangesAsync();
-                        return Ok(new { message = $"Cart item '{cartItemId}' switched to {target.FkSize.Label} / {target.FkColor.Name}." });
+                        var hydratedCart = await QueryCartWithDetails().FirstAsync(c => c.PkCartId == cartId);
+                        return Ok(MapToCartDto(hydratedCart));
                     }
                 }
 
@@ -328,7 +327,8 @@ namespace backend.Controllers
 
                 cartItem.Quantity = quantity;
                 await _context.SaveChangesAsync();
-                return Ok(new { message = $"Cart item '{cartItemId}' quantity updated to {quantity}." });
+                var hydratedCartFinal = await QueryCartWithDetails().FirstAsync(c => c.PkCartId == cartId);
+                return Ok(MapToCartDto(hydratedCartFinal));
             }
             catch (Exception ex)
             {
@@ -337,11 +337,9 @@ namespace backend.Controllers
             }
         }
 
-        /// <summary>
         /// Finds the variant of the same product for a new size and/or color (the one not given stays as it is).
         /// A size that has never been bought gets its variant row created, like <see cref="ResolveVariantAsync"/> does.
         /// Colors are never invented: the product must already have a variant in that color.
-        /// </summary>
         private async Task<ProductVariant?> ResolveVariantChangeAsync(ProductVariant current, string? sizeLabel, string? colorName)
         {
             IQueryable<ProductVariant> Variants() => _context.ProductVariants.Include(pv => pv.FkColor).Include(pv => pv.FkSize);
@@ -397,13 +395,16 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(cartItemId)) return BadRequest(new { error = "InvalidCartItemId", message = "The cartItemId cannot be null or empty." });
 
-                var cartItem = await _context.CartItems.FindAsync(cartItemId);
+                var cartItem = await _context.CartItems.FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
+
+                var cartId = cartItem.FkCartId;
 
                 _context.CartItems.Remove(cartItem);
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = $"Cart item '{cartItemId}' successfully removed." });
+                var hydratedCart = await QueryCartWithDetails().FirstAsync(c => c.PkCartId == cartId);
+                return Ok(MapToCartDto(hydratedCart));
             }
             catch (Exception ex)
             {

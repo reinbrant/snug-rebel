@@ -102,24 +102,54 @@ public class ReviewController : ControllerBase
             if (!userExists)
                 return NotFound(new { error = "UserNotFound", message = $"User with ID '{request.UserId}' was not found." });
 
-            var orderItemExists = await _context.OrderItems.AnyAsync(oi => oi.PkOrderItemId == request.OrderItemId);
-            if (!orderItemExists)
+            var orderItem = await _context.OrderItems
+                .Include(oi => oi.FkOrder)
+                .Include(oi => oi.FkProductVariant)
+                .FirstOrDefaultAsync(oi => oi.PkOrderItemId == request.OrderItemId);
+
+            if (orderItem == null)
                 return NotFound(new { error = "OrderItemNotFound", message = $"Order item with ID '{request.OrderItemId}' was not found." });
 
-            var review = new Review
+            if (orderItem.FkOrder.FkUserId != request.UserId)
+                return BadRequest(new { error = "InvalidOrderItemOwner", message = "The specified order item does not belong to this user." });
+
+            if (orderItem.FkProductVariant?.FkProductId != request.ProductId)
+                return BadRequest(new { error = "InvalidOrderItemProduct", message = "The specified order item does not belong to this product." });
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                FkProductId = request.ProductId,
-                FkUserId = request.UserId,
-                FkOrderItemId = request.OrderItemId,
-                Rating = request.Rating,
-                Body = request.Body,
-                CreatedAt = DateTime.UtcNow
-            };
+                var review = new Review
+                {
+                    FkProductId = request.ProductId,
+                    FkUserId = request.UserId,
+                    FkOrderItemId = request.OrderItemId,
+                    Rating = request.Rating,
+                    Body = request.Body,
+                    CreatedAt = DateTime.UtcNow
+                };
 
-            _context.Reviews.Add(review);
-            await _context.SaveChangesAsync();
+                _context.Reviews.Add(review);
+                await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetReviewsByProductId), new { productId = request.ProductId }, review);
+                var product = await _context.Products.FirstOrDefaultAsync(p => p.PkProductId == request.ProductId);
+                if (product != null)
+                {
+                    var reviews = await _context.Reviews.Where(r => r.FkProductId == request.ProductId).ToListAsync();
+                    product.ReviewCount = reviews.Count;
+                    product.AvgRating = reviews.Any() ? (decimal)reviews.Average(r => r.Rating) : 0m;
+                    await _context.SaveChangesAsync();
+                }
+
+                await transaction.CommitAsync();
+
+                return CreatedAtAction(nameof(GetReviewsByProductId), new { productId = request.ProductId }, review);
+            }
+            catch (Exception dbEx)
+            {
+                await transaction.RollbackAsync();
+                throw dbEx;
+            }
         }
         catch (Exception ex)
         {

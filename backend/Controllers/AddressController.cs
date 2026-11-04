@@ -25,7 +25,7 @@ public class AddressController : ControllerBase
             if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "InvalidUserId", message = "UserId is required." });
 
             var addresses = await _context.Addresses
-                .Where(a => a.FkUserId == userId)
+                .Where(a => a.FkUserId == userId && a.ArchivedAt == null)
                 .OrderByDescending(a => a.IsDefault)
                 .ThenByDescending(a => a.CreatedAt)
                 .ToListAsync();
@@ -42,12 +42,12 @@ public class AddressController : ControllerBase
 
     // Revised for guest checkout support: if FkUserId is null, the address is treated as a guest address and not linked to any user.
     [HttpPost("create")]
-public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
+    public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
     {
         try
         {
             if (request == null) return BadRequest(new { error = "NullRequest", message = "Request body is empty." });
-            
+
             // Truncate user ID if it exceeds the 40-character database column limit
             if (!string.IsNullOrEmpty(request.FkUserId) && request.FkUserId.Length > 40)
             {
@@ -111,7 +111,8 @@ public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest r
             var address = await _context.Addresses.FindAsync(addressId);
             if (address == null) return NotFound(new { error = "AddressNotFound", message = "Address not found." });
 
-            _context.Addresses.Remove(address);
+            address.ArchivedAt = DateTime.UtcNow;
+            address.IsDefault = false;
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Address deleted successfully." });

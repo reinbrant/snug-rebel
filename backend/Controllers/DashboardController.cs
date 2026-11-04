@@ -28,22 +28,18 @@ public class DashboardController : ControllerBase
         var monthStart = new DateTime(targetMonth.Year, targetMonth.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var monthEnd = monthStart.AddMonths(1);
 
-        var orders = await _context.Orders
+        var dailyCounts = await _context.Orders
             .AsNoTracking()
             .Where(o => o.PlacedAt >= monthStart && o.PlacedAt < monthEnd)
-            .Select(o => new { Date = o.PlacedAt.Date, Total = o.TotalAmount })
-            .ToListAsync();
-
-        var dailyCounts = orders
-            .GroupBy(o => o.Date)
+            .GroupBy(o => o.PlacedAt.Date)
             .Select(g => new
             {
                 date = g.Key,
                 orders = g.Count(),
-                total = g.Sum(x => x.Total),
+                total = g.Sum(x => x.TotalAmount),
             })
             .OrderBy(x => x.date)
-            .ToList();
+            .ToListAsync();
 
         var countsOnly = dailyCounts.Select(x => x.orders).ToList();
         var minimum = countsOnly.Any() ? countsOnly.Min() : 0;
