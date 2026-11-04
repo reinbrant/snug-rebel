@@ -10,13 +10,27 @@ public partial class Order
 
     public string OrderNumber { get; set; } = null!;
 
-    public string FkUserId { get; set; } = null!;
+    public string? FkUserId { get; set; }
 
     public string? FkPromoCodeId { get; set; }
 
     public string FkShippingAddressId { get; set; } = null!;
 
     public string? FkBillingAddressId { get; set; }
+
+    public string? ContactEmail { get; set; }
+
+    public string? ContactPhone { get; set; }
+
+    public string? CashReadyOption { get; set; }
+
+    public decimal ShippingDiscount { get; set; }
+
+    public string? IdempotencyKey { get; set; }
+
+    public bool IsTest { get; set; }
+    
+    public uint Version { get; set; }
 
     public decimal Subtotal { get; set; }
 
@@ -42,7 +56,7 @@ public partial class Order
     public virtual Address FkShippingAddress { get; set; } = null!;
 
     [JsonIgnore]
-    public virtual User FkUser { get; set; } = null!;
+    public virtual User? FkUser { get; set; }
 
     [JsonIgnore]
     public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();

@@ -14,6 +14,8 @@ public partial class PromoCode
 
     public decimal DiscountValue { get; set; }
 
+    public decimal? MaxDiscountAmount { get; set; }
+
     public decimal? MinOrderAmount { get; set; }
 
     public int? MaxUses { get; set; }

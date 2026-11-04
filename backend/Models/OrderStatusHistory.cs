@@ -10,14 +10,14 @@ public partial class OrderStatusHistory
 
     public string FkOrderId { get; set; } = null!;
 
-    public string ChangedBy { get; set; } = null!;
+    public string? ChangedBy { get; set; } = null!;
 
     public string? Note { get; set; }
 
     public DateTime ChangedAt { get; set; }
 
     [JsonIgnore]
-    public virtual User ChangedByNavigation { get; set; } = null!;
+    public virtual User? ChangedByNavigation { get; set; }
 
     [JsonIgnore]
     public virtual Order FkOrder { get; set; } = null!;

@@ -169,10 +169,10 @@ COMMIT;
 --   SELECT * FROM orders WHERE NOT (total_amount = GREATEST(0, subtotal + shipping_fee - discount_amount));
 -- Note: the demo seed in dashboard_tables.sql satisfies ck_orders_money.
 
--- Verify Part 1:
--- SELECT table_name, column_name, character_maximum_length
--- FROM information_schema.columns
--- WHERE column_name IN ('_pk_order_item_id','_fk_order_item_id','_pk_cart_item_id','_pk_order_status_history_id');
+Verify Part 1:
+SELECT table_name, column_name, character_maximum_length
+FROM information_schema.columns
+WHERE column_name IN ('_pk_order_item_id','_fk_order_item_id','_pk_cart_item_id','_pk_order_status_history_id');
 
 -- =============================================================================
 -- PART 6: re-baseline EF migrations (run ONLY after Part 1-5 succeeded AND you generated
@@ -181,10 +181,10 @@ COMMIT;
 -- create the tables again. Replace the id with the exact file name prefix EF generated
 -- (e.g. 20261105083000_InitialCreate).
 -- =============================================================================
--- CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
---     "MigrationId"    varchar(150) NOT NULL PRIMARY KEY,
---     "ProductVersion" varchar(32)  NOT NULL
--- );
--- DELETE FROM "__EFMigrationsHistory";   -- drop the stale row for the deleted migration, if the table existed
--- INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
--- VALUES ('20261105083000_InitialCreate', '10.0.13');
+CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+    "MigrationId"    varchar(150) NOT NULL PRIMARY KEY,
+    "ProductVersion" varchar(32)  NOT NULL
+);
+DELETE FROM "__EFMigrationsHistory";   -- drop the stale row for the deleted migration, if the table existed
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20261104135421_InitialCreate', '10.0.13');
