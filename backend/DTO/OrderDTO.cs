@@ -15,19 +15,19 @@ namespace backend.DTO
     {
         public string? UserId { get; set; }
         public string? SessionToken { get; set; }
-        public string? CartId { get; set; }
         public string? ShippingAddressId { get; set; }
-        public string? BillingAddressId { get; set; }
+        public string? VoucherCode { get; set; }
+        public string? Courier { get; set; }          // Accepts courier code ('jnt', 'lbc') or name
+        public string? PaymentMethod { get; set; }    // 'COD', 'COD_EWALLET', 'GCASH', etc.
+        public string? CashReadyOption { get; set; }
+        public string? CustomerNote { get; set; }
+        public string? IdempotencyKey { get; set; }
+
+        // Legacy fields kept optional so frontend doesn't break
         public decimal ShippingFee { get; set; }
         public decimal DiscountAmount { get; set; }
-        public string? VoucherCode { get; set; }
-        public string? Courier { get; set; }
-        public string? PaymentMethod { get; set; }
-        public string? CustomerNote { get; set; }
 
-        // Raw address fields for inline guest address creation;
-        // if ShippingAddressId or BillingAddressId is not provided, these fields will be used to create new addresses.
-        // mainly used for guest checkout, where the user may not have saved information.
+        // Guest / inline address & contact fields
         public string? RecipientName { get; set; }
         public string? Email { get; set; }
         public string? Phone { get; set; }
@@ -37,7 +37,6 @@ namespace backend.DTO
         public string? Province { get; set; }
         public string? PostalCode { get; set; }
 
-        // Optional direct items for "Buy Now" single-item checkout
         public List<DirectOrderItemRequest>? DirectItems { get; set; }
     }
 
@@ -45,7 +44,7 @@ namespace backend.DTO
     {
         public string PkOrderId { get; set; } = null!;
         public string OrderNumber { get; set; } = null!;
-        public string FkUserId { get; set; } = null!;
+        public string? FkUserId { get; set; }
         public string? FkPromoCodeId { get; set; }
         public string FkShippingAddressId { get; set; } = null!;
         public string? FkBillingAddressId { get; set; }
@@ -54,6 +53,12 @@ namespace backend.DTO
         public decimal ShippingFee { get; set; }
         public decimal TotalAmount { get; set; }
         public string? CustomerNote { get; set; }
+
+        public string Status { get; set; } = "Pending";
+        public string? Courier { get; set; }
+        public string? ContactEmail { get; set; }
+        public string? CashReadyOption { get; set; }
+
         public DateTime PlacedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public List<OrderItemDTO> Items { get; set; } = new List<OrderItemDTO>();

@@ -105,7 +105,6 @@ namespace backend.Controllers
             }
         }
 
-        // Changed to support accepting guest cart orders via SessionToken instead of just UserId. This allows guests to checkout without creating an account.
         [HttpPost("checkout")]
         public async Task<IActionResult> Checkout([FromBody] CreateOrderRequest request)
         {
@@ -113,15 +112,23 @@ namespace backend.Controllers
             {
                 if (request == null) return BadRequest(new { error = "NullRequestBody", message = "Request body cannot be null." });
 
-                // Fall back to "usr-guest-user" if no user is logged in.
-                string? normalizedUserId = string.IsNullOrWhiteSpace(request.UserId) ? "usr-guest-user" : request.UserId.Trim();
-                if (!string.IsNullOrEmpty(normalizedUserId) && normalizedUserId.Length > 40)
+                // 1. Idempotency Check
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
                 {
-                    normalizedUserId = normalizedUserId.Substring(0, 40);
+                    var existingOrder = await _context.Orders
+                        .Include(o => o.OrderItems)
+                        .FirstOrDefaultAsync(o => o.IdempotencyKey == request.IdempotencyKey.Trim());
+                    if (existingOrder != null)
+                    {
+                        return Ok(MapToOrderDto(existingOrder));
+                    }
                 }
+
+                // 2. Proper nullable guest handling
+                string? authenticatedUserId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
                 string? normalizedSessionToken = string.IsNullOrWhiteSpace(request.SessionToken) ? null : request.SessionToken.Trim();
 
-                if (normalizedUserId == null && normalizedSessionToken == null)
+                if (authenticatedUserId == null && normalizedSessionToken == null)
                     return BadRequest(new { error = "InvalidIdentifier", message = "A UserId or SessionToken must be provided." });
 
                 var cart = await _context.Carts
@@ -129,19 +136,33 @@ namespace backend.Controllers
                     .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkSize)
                     .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkColor)
                     .FirstOrDefaultAsync(c =>
-                        (normalizedUserId != null && c.FkUserId == normalizedUserId) ||
+                        (authenticatedUserId != null && c.FkUserId == authenticatedUserId) ||
                         (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
 
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = "No active cart was found." });
                 if (!cart.CartItems.Any()) return BadRequest(new { error = "EmptyCart", message = "Cannot place an order because the cart is empty." });
 
-                // 1. Resolve Shipping Address (Create one if guest)
+                // 3. Satisfy ck_orders_owner (_fk_user_id IS NOT NULL OR contact_email IS NOT NULL)
+                string? contactEmail = !string.IsNullOrWhiteSpace(request.Email)
+                    ? request.Email.Trim()
+                    : (authenticatedUserId == null ? "guest@snugrebel.local" : null);
+
+                // 4. Server-Side Courier Lookup
+                var courierQuery = request.Courier?.Trim().ToLower() ?? "jnt";
+                var courier = await _context.Couriers
+                    .FirstOrDefaultAsync(c => c.Code.ToLower() == courierQuery || c.Name.ToLower().Contains(courierQuery))
+                    ?? await _context.Couriers.FirstOrDefaultAsync(c => c.Code == "jnt")
+                    ?? new Courier { Code = "jnt", Name = "J&T Express", Fee = 120m };
+
+                decimal shippingFee = courier.Fee;
+
+                // 5. Resolve Shipping Address
                 string shippingAddressId = request.ShippingAddressId ?? string.Empty;
                 if (string.IsNullOrEmpty(shippingAddressId))
                 {
                     var newAddress = new Address
                     {
-                        FkUserId = normalizedUserId, // Will be null for guests
+                        FkUserId = authenticatedUserId, // This will be null for guest users.
                         RecipientName = request.RecipientName ?? "Guest",
                         Phone = request.Phone ?? "0000",
                         Line1 = request.Line1 ?? "N/A",
@@ -150,7 +171,7 @@ namespace backend.Controllers
                         Province = request.Province ?? "N/A",
                         PostalCode = request.PostalCode ?? "0000",
                         Country = "PH",
-                        IsDefault = true,
+                        IsDefault = authenticatedUserId != null,
                         AddressType = AddressType.Shipping,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
@@ -160,40 +181,75 @@ namespace backend.Controllers
                     shippingAddressId = newAddress.PkAddressId;
                 }
 
-                // 2. Resolve Promo Code
+                // 6. Resolve & Validate Promo Code
                 string? promoId = null;
+                decimal discountAmount = 0m;
                 if (!string.IsNullOrWhiteSpace(request.VoucherCode))
                 {
-                    var promo = await _context.PromoCodes.FirstOrDefaultAsync(p => p.Promocode.ToLower() == request.VoucherCode.ToLower() && p.IsActive);
-                    promoId = promo?.PkPromoCodeId;
+                    var code = request.VoucherCode.Trim();
+                    var promo = await _context.PromoCodes
+                        .FirstOrDefaultAsync(p => p.Promocode.ToUpper() == code.ToUpper() && p.IsActive);
+
+                    if (promo != null)
+                    {
+                        var subtotalCheck = cart.CartItems.Sum(ci => (ci.FkProductVariant.PriceOverride ?? ci.FkProductVariant.FkProduct.BasePrice) * ci.Quantity);
+                        var isValidWindow = (promo.PromoStart == null || DateTime.UtcNow >= promo.PromoStart) &&
+                                            (promo.PromoEnd == null || DateTime.UtcNow <= promo.PromoEnd);
+                        var isValidMinOrder = subtotalCheck >= (promo.MinOrderAmount ?? 0m);
+                        var isValidUses = promo.MaxUses == null || promo.TimesUsed < promo.MaxUses;
+
+                        if (isValidWindow && isValidMinOrder && isValidUses)
+                        {
+                            promoId = promo.PkPromoCodeId;
+                            if (promo.DiscountType == 0) // Percentage
+                            {
+                                discountAmount = Math.Round(subtotalCheck * (promo.DiscountValue / 100m), 2);
+                                if (promo.MaxDiscountAmount.HasValue && discountAmount > promo.MaxDiscountAmount.Value)
+                                {
+                                    discountAmount = promo.MaxDiscountAmount.Value;
+                                }
+                            }
+                            else // Fixed amount
+                            {
+                                discountAmount = promo.DiscountValue;
+                            }
+                        }
+                    }
                 }
 
                 var now = DateTime.UtcNow;
                 var subtotal = cart.CartItems.Sum(ci => (ci.FkProductVariant.PriceOverride ?? ci.FkProductVariant.FkProduct.BasePrice) * ci.Quantity);
-
-                // Format: SR-YYMMDD-XXXX (e.g., SR-261013-4821)
-                // TODO: Maybe change this later since Random() is not guaranteed to be unique.
-                var orderNumber = $"SR-{now:yyMMdd}-{new Random().Next(1000, 10000)}";
-
-                var order = new Order
-                {
-                    OrderNumber = orderNumber,
-                    FkUserId = normalizedUserId,
-                    FkPromoCodeId = promoId,
-                    FkShippingAddressId = shippingAddressId,
-                    Subtotal = subtotal,
-                    DiscountAmount = request.DiscountAmount,
-                    ShippingFee = request.ShippingFee,
-                    TotalAmount = Math.Max(0, subtotal + request.ShippingFee - request.DiscountAmount),
-                    CustomerNote = request.CustomerNote,
-                    Status = OrderStatus.Pending,
-                    PlacedAt = now,
-                    UpdatedAt = now
-                };
+                decimal finalTotal = Math.Max(0, subtotal + shippingFee - discountAmount);
 
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
+                    // 7. Collision-Free Order Number via Sequence
+                    var seqVal = await _context.Database
+                        .SqlQueryRaw<long>("SELECT nextval('order_number_seq') AS \"Value\"")
+                        .SingleAsync();
+                    var orderNumber = $"SR-{now:yyMMdd}-{seqVal}";
+
+                    var order = new Order
+                    {
+                        OrderNumber = orderNumber,
+                        FkUserId = authenticatedUserId,
+                        ContactEmail = contactEmail,
+                        ContactPhone = request.Phone?.Trim(),
+                        CashReadyOption = request.CashReadyOption?.Trim(),
+                        FkPromoCodeId = promoId,
+                        FkShippingAddressId = shippingAddressId,
+                        Subtotal = subtotal,
+                        DiscountAmount = discountAmount,
+                        ShippingFee = shippingFee,
+                        TotalAmount = finalTotal,
+                        CustomerNote = request.CustomerNote,
+                        Status = OrderStatus.Pending,
+                        IdempotencyKey = request.IdempotencyKey?.Trim(),
+                        PlacedAt = now,
+                        UpdatedAt = now
+                    };
+
                     _context.Orders.Add(order);
                     await _context.SaveChangesAsync();
 
@@ -202,6 +258,17 @@ namespace backend.Controllers
                     {
                         var variant = cartItem.FkProductVariant;
                         var unitPrice = variant.PriceOverride ?? variant.FkProduct.BasePrice;
+
+                        // Atomic Stock Decrement via ExecuteUpdateAsync
+                        var affected = await _context.ProductVariants
+                            .Where(pv => pv.PkProductVariantId == variant.PkProductVariantId && pv.StockQuantity >= cartItem.Quantity)
+                            .ExecuteUpdateAsync(s => s.SetProperty(pv => pv.StockQuantity, pv => pv.StockQuantity - cartItem.Quantity));
+
+                        if (affected == 0)
+                        {
+                            await transaction.RollbackAsync();
+                            return Conflict(new { error = "InsufficientStock", message = $"Insufficient stock for {variant.Sku}." });
+                        }
 
                         orderItems.Add(new OrderItem
                         {
@@ -216,21 +283,53 @@ namespace backend.Controllers
                             LineTotal = unitPrice * cartItem.Quantity,
                             FkProductVariant = variant
                         });
-
-                        variant.StockQuantity -= cartItem.Quantity;
                     }
 
                     _context.OrderItems.AddRange(orderItems);
 
-                    // Keep the chosen courier so the tracking page can estimate arrival.
-                    // Uses the existing shipments table; staff fill in the tracking number later.
+                    // 8. Atomic Promo Validation & Increment
+                    if (!string.IsNullOrEmpty(promoId))
+                    {
+                        await _context.PromoCodes
+                            .Where(p => p.PkPromoCodeId == promoId && (p.MaxUses == null || p.TimesUsed < p.MaxUses))
+                            .ExecuteUpdateAsync(s => s.SetProperty(p => p.TimesUsed, p => p.TimesUsed + 1));
+                    }
+
+                    // 9. Shipment Record with Courier relation
                     _context.Shipments.Add(new Shipment
                     {
-                        PkShipmentId = "ship-" + Guid.NewGuid().ToString("N").Substring(0, 24), // Ensures it fits in varchar(40)
                         FkOrderId = order.PkOrderId,
-                        Courier = string.IsNullOrWhiteSpace(request.Courier) ? null : request.Courier.Trim(),
+                        FkCourierId = courier.PkCourierId != null && !courier.PkCourierId.StartsWith("cour") ? courier.PkCourierId : null,
+                        Courier = courier.Name,
                         Status = ShipmentStatus.Preparing
                     });
+
+                    // 10. Initial Pending Payment Record
+                    PaymentMethod parsedMethod = PaymentMethod.Cod;
+                    if (!string.IsNullOrWhiteSpace(request.PaymentMethod))
+                    {
+                        Enum.TryParse(request.PaymentMethod.Trim(), true, out parsedMethod);
+                    }
+
+                    _context.Payments.Add(new Payment
+                    {
+                        FkOrderId = order.PkOrderId,
+                        Method = parsedMethod,
+                        Status = PaymentStatus.Pending,
+                        Amount = finalTotal,
+                        CreatedAt = now
+                    });
+
+                    // 11. Initial Pending OrderStatusHistory Record
+                    _context.OrderStatusHistories.Add(new OrderStatusHistory
+                    {
+                        FkOrderId = order.PkOrderId,
+                        Status = OrderStatus.Pending,
+                        ChangedBy = authenticatedUserId,
+                        Note = "Order placed.",
+                        ChangedAt = now
+                    });
+
                     _context.CartItems.RemoveRange(cart.CartItems);
 
                     await _context.SaveChangesAsync();
@@ -331,6 +430,10 @@ namespace backend.Controllers
                 ShippingFee = order.ShippingFee,
                 TotalAmount = order.TotalAmount,
                 CustomerNote = order.CustomerNote,
+                Status = order.Status.ToString(),
+                Courier = order.Shipments.FirstOrDefault()?.Courier,
+                ContactEmail = order.ContactEmail,
+                CashReadyOption = order.CashReadyOption,
                 PlacedAt = order.PlacedAt,
                 UpdatedAt = order.UpdatedAt,
                 Items = order.OrderItems.Select(oi => new OrderItemDTO
