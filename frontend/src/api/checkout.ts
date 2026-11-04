@@ -102,80 +102,56 @@ export async function submitCheckoutOrder(params: {
     let placedAt = new Date().toISOString();
 
     if (!USE_MOCK) {
-        try {
-            const userId = "userId" in owner ? owner.userId : undefined;
-            const sessionToken =
-                "sessionToken" in owner ? owner.sessionToken : undefined;
+        // Generate a unique idempotency key per checkout attempt
+        const idempotencyKey = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+        
+        const userId = "userId" in owner ? owner.userId : undefined;
+        const sessionToken = "sessionToken" in owner ? owner.sessionToken : undefined;
 
-            let shippingAddressId: string | undefined;
-            if (userId) {
-                const addr = await apiFetch<{ pkAddressId: string }>(
-                    "/Address/create",
-                    {
-                        method: "POST",
-                        body: JSON.stringify({
-                            fkUserId: userId,
-                            recipientName: `${values.firstName.trim()} ${values.lastName.trim()}`,
-                            phone: values.mobileNumber.trim(),
-                            line1: values.line1.trim(),
-                            line2: values.landmarkNotes.trim() || null,
-                            barangay: values.barangayName,
-                            city: values.cityName,
-                            province: values.provinceName,
-                            postalCode: values.postalCode.trim(),
-                            country: "PH",
-                            isDefault: true,
-                            addressType: 0,
-                        }),
-                    },
-                );
-                shippingAddressId = addr.pkAddressId;
-            }
+        // Removed the fake-order catch block so real errors bubble up to CheckoutPage.tsx
+        const createdOrder = await apiFetch<BackendOrderDTO>(
+            "/Order/checkout",
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    userId: userId ?? null,
+                    sessionToken: sessionToken ?? null,
+                    idempotencyKey, // Send idempotencyKey
+                    shippingFee: netShipping,
+                    discountAmount,
+                    voucherCode: voucher?.code ?? null,
+                    courier: courier.name,
+                    paymentMethod:
+                        values.paymentMethod === "cod"
+                            ? "COD"
+                            : "COD_EWALLET",
+                    // Inline address and contact fields sent directly in the checkout payload
+                    recipientName: `${values.firstName.trim()} ${values.lastName.trim()}`,
+                    email: values.email.trim(),
+                    phone: values.mobileNumber.trim(),
+                    line1: values.line1.trim(),
+                    barangay: values.barangayName,
+                    city: values.cityName,
+                    province: values.provinceName,
+                    postalCode: values.postalCode.trim(),
+                    customerNote: values.landmarkNotes.trim() || null,
+                    cashReadyOption: values.cashReadyOption,
+                    directItems: isBuyNow
+                        ? items.map((i) => ({
+                            productId: i.productId,
+                            size: i.size,
+                            color: i.color,
+                            quantity: i.quantity,
+                        }))
+                        : null,
+                }),
+            },
+        );
 
-            const createdOrder = await apiFetch<BackendOrderDTO>(
-                "/Order/checkout",
-                {
-                    method: "POST",
-                    body: JSON.stringify({
-                        userId: userId ?? null,
-                        sessionToken: sessionToken ?? null,
-                        shippingAddressId: shippingAddressId ?? null,
-                        shippingFee: netShipping,
-                        discountAmount,
-                        voucherCode: voucher?.code ?? null,
-                        courier: courier.name,
-                        paymentMethod:
-                            values.paymentMethod === "cod"
-                                ? "COD"
-                                : "COD_EWALLET",
-                        recipientName: `${values.firstName.trim()} ${values.lastName.trim()}`,
-                        email: values.email.trim(),
-                        phone: values.mobileNumber.trim(),
-                        line1: values.line1.trim(),
-                        barangay: values.barangayName,
-                        city: values.cityName,
-                        province: values.provinceName,
-                        postalCode: values.postalCode.trim(),
-                        customerNote: values.landmarkNotes.trim() || null,
-                        directItems: isBuyNow
-                            ? items.map((i) => ({
-                                productId: i.productId,
-                                size: i.size,
-                                color: i.color,
-                                quantity: i.quantity,
-                            }))
-                            : null,
-                    }),
-                },
-            );
-
-            if (createdOrder?.orderNumber) {
-                orderId = createdOrder.pkOrderId || orderId;
-                orderNumber = createdOrder.orderNumber;
-                placedAt = createdOrder.placedAt || placedAt;
-            }
-        } catch (err) {
-            console.warn("Backend checkout fallback triggered:", err);
+        if (createdOrder?.orderNumber) {
+            orderId = createdOrder.pkOrderId || orderId;
+            orderNumber = createdOrder.orderNumber;
+            placedAt = createdOrder.placedAt || placedAt;
         }
     }
 

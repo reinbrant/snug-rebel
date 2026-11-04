@@ -13,6 +13,11 @@ export function getSessionToken(): string {
         localStorage.setItem(SESSION_STORAGE_KEY, token)
         return token
     } catch {
-        return 'sess_fallback_guest'
+        // Generate an in-memory UUID instead of a static string for private browsing users
+        return `sess_${
+            typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2) + Date.now().toString(36)
+        }`
     }
 }
