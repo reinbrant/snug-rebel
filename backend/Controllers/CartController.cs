@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
@@ -16,6 +17,14 @@ namespace backend.Controllers
         {
             _context = context;
         }
+
+        private bool CanAccessUser(string userId) => User.Identity?.IsAuthenticated == true &&
+            (User.FindFirstValue(ClaimTypes.NameIdentifier) == userId || User.IsInRole("Admin") || User.IsInRole("Staff"));
+
+        private bool CanAccessCart(Cart cart) => cart.FkUserId != null ? CanAccessUser(cart.FkUserId) :
+            !string.IsNullOrWhiteSpace(cart.SessionToken) && Request.Headers["X-Cart-Session"] == cart.SessionToken;
+
+        private IActionResult Denied() => User.Identity?.IsAuthenticated == true ? Forbid() : Unauthorized();
 
         private IQueryable<Cart> QueryCartWithDetails()
         {
@@ -40,6 +49,7 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "InvalidUserId", message = "The userId parameter cannot be null or empty." });
 
+                if (!CanAccessUser(userId)) return Denied();
                 var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.FkUserId == userId);
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = $"No active cart found for User ID '{userId}'." });
 
@@ -59,7 +69,7 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(sessionToken)) return BadRequest(new { error = "InvalidSessionToken", message = "The sessionToken parameter cannot be null or empty." });
 
-                var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.SessionToken == sessionToken);
+                var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.SessionToken == sessionToken && c.FkUserId == null);
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = $"No active cart found for Session Token '{sessionToken}'." });
 
                 return Ok(MapToCartDto(cart));
@@ -84,6 +94,11 @@ namespace backend.Controllers
                 if (normalizedUserId == null && normalizedSessionToken == null)
                     return BadRequest(new { error = "MissingCartIdentifier", message = "At least one owner identifier must be provided." });
 
+                if (normalizedUserId != null && !CanAccessUser(normalizedUserId)) return Denied();
+                if (normalizedUserId != null && normalizedSessionToken != null)
+                    return BadRequest(new { message = "Provide one bag owner." });
+                if (normalizedSessionToken?.Length > 100) return BadRequest(new { message = "Invalid session token." });
+
                 var itemsToAdd = request.Items ?? new List<CartItemRequest>();
                 if (!string.IsNullOrWhiteSpace(request.ProductVariantId) || !string.IsNullOrWhiteSpace(request.ProductId))
                 {
@@ -91,6 +106,7 @@ namespace backend.Controllers
                     {
                         ProductId = request.ProductId,
                         Size = request.Size,
+                        Color = request.Color,
                         ProductVariantId = request.ProductVariantId,
                         Quantity = request.Quantity ?? 1
                     });
@@ -103,7 +119,7 @@ namespace backend.Controllers
 
                 var cart = await _context.Carts
                     .Include(c => c.CartItems)
-                    .FirstOrDefaultAsync(c => (normalizedUserId != null && c.FkUserId == normalizedUserId) || (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
+                    .FirstOrDefaultAsync(c => (normalizedUserId != null && c.FkUserId == normalizedUserId) || (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken && c.FkUserId == null));
 
                 if (cart == null)
                 {
@@ -117,7 +133,7 @@ namespace backend.Controllers
 
                 foreach (var item in validItems)
                 {
-                    var variant = await ResolveVariantAsync(item.ProductVariantId, item.ProductId, item.Size);
+                    var variant = await ResolveVariantAsync(item.ProductVariantId, item.ProductId, item.Size, item.Color);
 
                     if (variant == null)
                     {
@@ -166,90 +182,19 @@ namespace backend.Controllers
         }
 
         /// <summary>
-        /// A size IS the variant. Finds the variant row for (product, size) and creates it on first use,
-        /// so products never need hand-made product_variants rows before they can be added to a cart.
+        /// Resolve only inventory configured by an administrator; purchases never create stock.
         /// </summary>
-        private async Task<ProductVariant?> ResolveVariantAsync(string? variantId, string? productId, string? sizeLabel)
+        private async Task<ProductVariant?> ResolveVariantAsync(string? variantId, string? productId, string? sizeLabel, string? colorName)
         {
-            IQueryable<ProductVariant> Variants() => _context.ProductVariants.Include(pv => pv.FkColor).Include(pv => pv.FkSize);
-
-            variantId = variantId?.Trim();
-            productId = productId?.Trim();
-            sizeLabel = sizeLabel?.Trim();
-
-            // 1. An exact variant id wins
-            if (!string.IsNullOrEmpty(variantId))
-            {
-                var direct = await Variants().FirstOrDefaultAsync(pv => pv.PkProductVariantId == variantId);
-                if (direct != null) return direct;
-
-                // Old clients: "var_{productId}_{color}_{size}" or "{productId}_{size}"
-                if (string.IsNullOrEmpty(productId))
-                {
-                    var working = variantId.StartsWith("var_") ? variantId.Substring(4) : variantId;
-                    var parts = working.Split('_');
-                    if (parts.Length >= 2)
-                    {
-                        productId = parts[0];
-                        sizeLabel = parts[^1];
-                    }
-                }
-            }
-
-            if (string.IsNullOrEmpty(productId)) return null;
-            if (!await _context.Products.AnyAsync(p => p.PkProductId == productId)) return null;
-
-            // 2. No size given (e.g. the shop card button): use the product's first size, else "S"
-            if (string.IsNullOrEmpty(sizeLabel))
-            {
-                var first = await Variants()
-                    .Where(pv => pv.FkProductId == productId && pv.IsActive)
-                    .OrderBy(pv => pv.FkSize.SortOrder)
-                    .FirstOrDefaultAsync();
-                if (first != null) return first;
-                sizeLabel = "S";
-            }
-
-            // 3. Existing variant for this product + size
-            var lower = sizeLabel.ToLower();
-            var existing = await Variants()
-                .Where(pv => pv.FkProductId == productId && pv.IsActive && pv.FkSize.Label.ToLower() == lower)
-                .FirstOrDefaultAsync();
-            if (existing != null) return existing;
-
-            // 4. First time this size is bought: create the variant
-            var label = sizeLabel.ToUpper();
-            var size = await _context.Sizes.FirstOrDefaultAsync(s => s.Label.ToLower() == lower);
-            if (size == null)
-            {
-                var order = Array.IndexOf(new[] { "S", "M", "L", "XL" }, label);
-                size = new Size { Label = label, SortOrder = order >= 0 ? order + 1 : 99 };
-                _context.Sizes.Add(size);
-                await _context.SaveChangesAsync();
-            }
-
-            var color = await _context.Colors.OrderBy(c => c.PkColorId).FirstOrDefaultAsync();
-            if (color == null)
-            {
-                color = new Color { Name = "Standard", HexCode = "#000000" };
-                _context.Colors.Add(color);
-                await _context.SaveChangesAsync();
-            }
-
-            var created = new ProductVariant
-            {
-                FkProductId = productId,
-                FkSizeId = size.PkSizeId,
-                FkColorId = color.PkColorId,
-                Sku = $"{productId}-{size.Label}".ToUpper(),
-                StockQuantity = 50,
-                ReorderLevel = 5,
-                IsActive = true
-            };
-            _context.ProductVariants.Add(created);
-            await _context.SaveChangesAsync();
-
-            return await Variants().FirstAsync(pv => pv.PkProductVariantId == created.PkProductVariantId);
+            var query = _context.ProductVariants.Include(v => v.FkColor).Include(v => v.FkSize)
+                .Where(v => v.IsActive && v.FkProduct.IsActive);
+            if (!string.IsNullOrWhiteSpace(variantId))
+                return await query.FirstOrDefaultAsync(v => v.PkProductVariantId == variantId && (productId == null || v.FkProductId == productId));
+            if (string.IsNullOrWhiteSpace(productId)) return null;
+            query = query.Where(v => v.FkProductId == productId);
+            if (!string.IsNullOrWhiteSpace(sizeLabel)) query = query.Where(v => v.FkSize.Label.ToLower() == sizeLabel.Trim().ToLower());
+            if (!string.IsNullOrWhiteSpace(colorName)) query = query.Where(v => v.FkColor.Name.ToLower() == colorName.Trim().ToLower());
+            return await query.OrderByDescending(v => v.StockQuantity > 0).ThenBy(v => v.FkSize.SortOrder).ThenBy(v => v.PkProductVariantId).FirstOrDefaultAsync();
         }
 
         [HttpPut("item/{cartItemId}")]
@@ -270,6 +215,8 @@ namespace backend.Controllers
                     .FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
 
+                var owningCart = await _context.Carts.FindAsync(cartItem.FkCartId);
+                if (owningCart == null || !CanAccessCart(owningCart)) return Denied();
                 var cartId = cartItem.FkCartId;
 
                 if (request.Quantity is <= 0)
@@ -338,55 +285,11 @@ namespace backend.Controllers
         }
 
         /// Finds the variant of the same product for a new size and/or color (the one not given stays as it is).
-        /// A size that has never been bought gets its variant row created, like <see cref="ResolveVariantAsync"/> does.
-        /// Colors are never invented: the product must already have a variant in that color.
-        private async Task<ProductVariant?> ResolveVariantChangeAsync(ProductVariant current, string? sizeLabel, string? colorName)
-        {
-            IQueryable<ProductVariant> Variants() => _context.ProductVariants.Include(pv => pv.FkColor).Include(pv => pv.FkSize);
-
-            var wantSize = string.IsNullOrWhiteSpace(sizeLabel) ? current.FkSize.Label : sizeLabel.Trim();
-            var wantColor = string.IsNullOrWhiteSpace(colorName) ? current.FkColor.Name : colorName.Trim();
-            var sizeLower = wantSize.ToLower();
-            var colorLower = wantColor.ToLower();
-
-            var existing = await Variants().FirstOrDefaultAsync(pv =>
-                pv.FkProductId == current.FkProductId && pv.IsActive &&
-                pv.FkSize.Label.ToLower() == sizeLower && pv.FkColor.Name.ToLower() == colorLower);
-            if (existing != null) return existing;
-
-            var color = await Variants()
-                .Where(pv => pv.FkProductId == current.FkProductId && pv.IsActive && pv.FkColor.Name.ToLower() == colorLower)
-                .Select(pv => pv.FkColor)
-                .FirstOrDefaultAsync();
-            if (color == null) return null;
-
-            var size = await _context.Sizes.FirstOrDefaultAsync(s => s.Label.ToLower() == sizeLower);
-            if (size == null)
-            {
-                var standard = new[] { "S", "M", "L", "XL" };
-                var order = Array.IndexOf(standard, wantSize.ToUpper());
-                if (order < 0) return null;
-                size = new Size { Label = wantSize.ToUpper(), SortOrder = order + 1 };
-                _context.Sizes.Add(size);
-                await _context.SaveChangesAsync();
-            }
-
-            var created = new ProductVariant
-            {
-                FkProductId = current.FkProductId,
-                FkSizeId = size.PkSizeId,
-                FkColorId = color.PkColorId,
-                Sku = $"{current.FkProductId}-{size.Label}-{color.Name}".ToUpper().Replace(' ', '-'),
-                PriceOverride = current.PriceOverride,
-                StockQuantity = 50,
-                ReorderLevel = 5,
-                IsActive = true
-            };
-            _context.ProductVariants.Add(created);
-            await _context.SaveChangesAsync();
-
-            return await Variants().FirstAsync(pv => pv.PkProductVariantId == created.PkProductVariantId);
-        }
+        /// Only configured combinations can be selected.
+        private Task<ProductVariant?> ResolveVariantChangeAsync(ProductVariant current, string? sizeLabel, string? colorName) =>
+            ResolveVariantAsync(null, current.FkProductId,
+                string.IsNullOrWhiteSpace(sizeLabel) ? current.FkSize.Label : sizeLabel,
+                string.IsNullOrWhiteSpace(colorName) ? current.FkColor.Name : colorName);
 
         [HttpDelete("item/{cartItemId}")]
         public async Task<IActionResult> RemoveCartItem(string cartItemId)
@@ -398,6 +301,8 @@ namespace backend.Controllers
                 var cartItem = await _context.CartItems.FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
 
+                var owningCart = await _context.Carts.FindAsync(cartItem.FkCartId);
+                if (owningCart == null || !CanAccessCart(owningCart)) return Denied();
                 var cartId = cartItem.FkCartId;
 
                 _context.CartItems.Remove(cartItem);
@@ -420,9 +325,10 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(cartId)) return BadRequest(new { error = "InvalidCartId", message = "The cartId cannot be null or empty." });
 
-                var cartExists = await _context.Carts.AnyAsync(c => c.PkCartId == cartId);
-                if (!cartExists) return NotFound(new { error = "CartNotFound", message = $"Cart with ID '{cartId}' does not exist." });
+                var cart = await _context.Carts.FindAsync(cartId);
+                if (cart == null) return NotFound(new { error = "CartNotFound", message = $"Cart with ID '{cartId}' does not exist." });
 
+                if (!CanAccessCart(cart)) return Denied();
                 var cartItems = await _context.CartItems.Where(ci => ci.FkCartId == cartId).ToListAsync();
                 if (!cartItems.Any()) return Ok(new { message = $"Cart '{cartId}' is already empty." });
 

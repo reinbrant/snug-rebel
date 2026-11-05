@@ -1,5 +1,5 @@
-import { apiFetch } from './api'
-import { MOCK_PRODUCTS, resolveAssetUrl } from '../data/products'
+import { apiFetch, resolveAssetUrl } from './api'
+import { MOCK_PRODUCTS } from '../data/products'
 
 export type ItemColor = { name: string; hex: string }
 export type ItemSize = { label: string; available: boolean }
@@ -167,11 +167,9 @@ export async function getItem(id: string): Promise<ItemDetail | null> {
         if (!detail) return null
 
         const activeModel = models.find((m) => m.isActive) ?? models[0]
-        const rawImage =
-            !isPlaceholderImage(detail.imageSrc)
-                ? detail.imageSrc
-                : activeModel?.previewImageUrl || detail.imageSrc
-
+        const rawImage = !isPlaceholderImage(detail.imageSrc)
+            ? detail.imageSrc
+            : activeModel?.previewImageUrl || detail.imageSrc
         const rawModelUrl = detail.modelUrl || activeModel?.modelUrl || null
 
         return {
@@ -193,26 +191,9 @@ export async function getItemReviews(id: string): Promise<Review[]> {
         await simulateNetwork()
         return MOCK_REVIEWS
     }
-    try {
-        const raw = await apiFetch<
-            Array<{
-                pkReviewId: string
-                userDisplayName?: string
-                rating: number
-                body?: string
-                createdAt: string
-            }>
-        >(`/Review/product/${encodeURIComponent(id)}`)
-        if (!Array.isArray(raw) || raw.length === 0) return MOCK_REVIEWS
-        return raw.map((r) => ({
-            id: r.pkReviewId,
-            author: r.userDisplayName?.trim() || 'Verified Buyer',
-            rating: r.rating,
-            body: r.body ?? '',
-            postedAt: r.createdAt ? r.createdAt.slice(0, 10) : '',
-            verified: true,
-        }))
-    } catch {
-        return MOCK_REVIEWS
-    }
+    const rows = await apiFetch<Array<{ pkReviewId: string; userDisplayName?: string; rating: number; body?: string; createdAt: string }>>(`/Review/product/${encodeURIComponent(id)}`)
+    return rows.map(r => ({
+        id: r.pkReviewId, author: r.userDisplayName || 'Customer', rating: r.rating,
+        body: r.body || '', postedAt: r.createdAt, verified: true
+    }))
 }

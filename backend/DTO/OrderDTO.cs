@@ -5,6 +5,7 @@ namespace backend.DTO
 {
     public class DirectOrderItemRequest
     {
+        public string? ProductVariantId { get; set; }
         public string ProductId { get; set; } = string.Empty;
         public string? Size { get; set; }
         public string? Color { get; set; }

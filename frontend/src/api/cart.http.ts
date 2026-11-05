@@ -1,5 +1,6 @@
-import { ApiError, apiFetch } from './api'
+import { ApiError, apiFetch, resolveAssetUrl } from './api'
 import { EMPTY_CART, type Cart, type CartOwner, type CartTarget, type VariantChange } from './cart.types'
+import { getSessionToken } from './session'
 
 type CartItemDTO = {
     pkCartItemId: string
@@ -27,7 +28,7 @@ const toCart = (dto: CartDTO): Cart => ({
         variantId: i.fkProductVariantId,
         productId: i.productId ?? '',
         name: i.productName ?? 'Item',
-        imageUrl: i.imageUrl ?? null,
+        imageUrl: resolveAssetUrl(i.imageUrl) || null,
         unitPrice: i.unitPrice ?? 0,
         color: i.colorName ?? null,
         size: i.sizeLabel ?? null,
@@ -53,7 +54,7 @@ export async function fetchCart(owner: CartOwner): Promise<Cart> {
 export async function addToCart(owner: CartOwner, target: CartTarget, quantity = 1): Promise<Cart> {
     const dto = await apiFetch<CartDTO>('/Cart/add', {
         method: 'POST',
-        body: JSON.stringify({ ...owner, productId: target.productId, size: target.size ?? null, quantity }),
+        body: JSON.stringify({ ...owner, productId: target.productId, size: target.size ?? null, color: target.color ?? null, productVariantId: target.productVariantId, quantity }),
     })
     return toCart(dto)
 }
@@ -61,6 +62,7 @@ export async function addToCart(owner: CartOwner, target: CartTarget, quantity =
 export async function updateCartItem(cartItemId: string, quantity: number): Promise<void> {
     await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, {
         method: 'PUT',
+        headers: { 'X-Cart-Session': getSessionToken() },
         body: JSON.stringify({ quantity }),
     })
 }
@@ -68,14 +70,15 @@ export async function updateCartItem(cartItemId: string, quantity: number): Prom
 export async function changeCartItemVariant(cartItemId: string, change: VariantChange): Promise<void> {
     await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, {
         method: 'PUT',
+        headers: { 'X-Cart-Session': getSessionToken() },
         body: JSON.stringify({ size: change.size ?? null, color: change.color ?? null }),
     })
 }
 
 export async function removeCartItem(cartItemId: string): Promise<void> {
-    await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, { method: 'DELETE' })
+    await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, { method: 'DELETE', headers: { 'X-Cart-Session': getSessionToken() } })
 }
 
 export async function clearCart(cartId: string): Promise<void> {
-    await apiFetch(`/Cart/${encodeURIComponent(cartId)}/clear`, { method: 'DELETE' })
+    await apiFetch(`/Cart/${encodeURIComponent(cartId)}/clear`, { method: 'DELETE', headers: { 'X-Cart-Session': getSessionToken() } })
 }

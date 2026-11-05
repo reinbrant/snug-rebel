@@ -1,4 +1,4 @@
-const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
+const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5146/api').replace(/\/$/, '')
 
 // Thrown for any failed request
 export class ApiError extends Error {
@@ -24,7 +24,7 @@ export async function apiFetch<T>(endpoint: string, init: RequestInit = {}): Pro
 
     let res: Response
     try {
-        res = await fetch(`${API_URL}${endpoint}`, { ...init, headers })
+        res = await fetch(`${API_URL}${endpoint}`, { ...init, headers, credentials: 'include' })
     } catch {
         throw new ApiError({
             status: 0,
@@ -33,10 +33,19 @@ export async function apiFetch<T>(endpoint: string, init: RequestInit = {}): Pro
     }
 
     if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null
-        throw new ApiError({ status: res.status, code: body?.error, serverMessage: body?.message })
+        const body = (await res.json().catch(() => null)) as {
+            error?: string; message?: string; title?: string; errors?: Record<string, string[]>
+        } | null
+        if (res.status === 401 && !endpoint.startsWith('/Auth/')) window.dispatchEvent(new Event('snug-auth-expired'))
+        throw new ApiError({ status: res.status, code: body?.error,
+            serverMessage: body?.message ?? Object.values(body?.errors ?? {}).flat()[0] ?? body?.title })
     }
 
     const text = await res.text()
     return (text ? JSON.parse(text) : undefined) as T
+}
+export function resolveAssetUrl(url: string | null | undefined): string {
+    if (!url) return ''
+    if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:')) return url
+    return `${API_URL.replace(/\/api$/, '')}${url.startsWith('/') ? '' : '/'}${url}`
 }

@@ -2,6 +2,15 @@
 // Set VITE_API_BASE_URL in .env to override (e.g. for staging/production).
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5146'
 
+export const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) =>
+  fetch(input, { ...init, credentials: 'include' })
+
+export async function requestJson<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await apiFetch(`${API_BASE}${path}`, init)
+  if (!response.ok) throw new Error(await readErrorMessage(response, `Request failed (HTTP ${response.status}).`))
+  return response.status === 204 ? undefined as T : response.json()
+}
+
 // Turn a URL returned by the API into something the browser can load.
 // Relative paths (e.g. "/uploads/models/tee.glb") are resolved against API_BASE.
 export function resolveAssetUrl(url: string | undefined | null): string {

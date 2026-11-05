@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Development settings inherit Neon credentials from ignored appsettings.json.
+!appsettings.Development.json
+wwwroot/uploads/

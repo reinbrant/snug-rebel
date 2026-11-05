@@ -26,10 +26,6 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Category> Categories { get; set; }
 
-    public virtual DbSet<Collection> Collections { get; set; }
-
-    public virtual DbSet<CollectionProduct> CollectionProducts { get; set; }
-
     public virtual DbSet<Color> Colors { get; set; }
 
     public virtual DbSet<DashboardMetric> DashboardMetrics { get; set; }
@@ -267,66 +263,6 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.FkParentCategoryId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("categories__fk_parent_category_id_fkey");
-        });
-
-        modelBuilder.Entity<Collection>(entity =>
-        {
-            entity.HasKey(e => e.PkCollectionId).HasName("collections_pkey");
-
-            entity.ToTable("collections");
-
-            entity.HasIndex(e => e.Slug, "collections_slug_key").IsUnique();
-
-            entity.Property(e => e.PkCollectionId)
-                .HasMaxLength(40)
-                .HasDefaultValueSql("('col'::text || (gen_random_uuid())::text)")
-                .HasColumnName("_pk_collection_id");
-            entity.Property(e => e.BannerUrl)
-                .HasMaxLength(500)
-                .HasColumnName("banner_url");
-            entity.Property(e => e.CollectionName)
-                .HasMaxLength(120)
-                .HasColumnName("collection_name");
-            entity.Property(e => e.Description).HasColumnName("description");
-            entity.Property(e => e.IsActive)
-                .HasDefaultValue(true)
-                .HasColumnName("is_active");
-            entity.Property(e => e.LaunchDate).HasColumnName("launch_date");
-            entity.Property(e => e.Slug)
-                .HasMaxLength(140)
-                .HasColumnName("slug");
-        });
-
-        modelBuilder.Entity<CollectionProduct>(entity =>
-        {
-            entity
-                .HasNoKey()
-                .ToTable("collection_products");
-
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("now()")
-                .HasColumnType("timestamp without time zone")
-                .HasColumnName("created_at");
-            entity.Property(e => e.FkCollectionId)
-                .HasMaxLength(40)
-                .HasColumnName("_fk_collection_id");
-            entity.Property(e => e.FkProductId)
-                .HasMaxLength(40)
-                .HasColumnName("_fk_product_id");
-            entity.Property(e => e.UpdatedAt)
-                .HasDefaultValueSql("now()")
-                .HasColumnType("timestamp without time zone")
-                .HasColumnName("updated_at");
-
-            entity.HasOne(d => d.FkCollection).WithMany()
-                .HasForeignKey(d => d.FkCollectionId)
-                .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("collection_products__fk_collection_id_fkey");
-
-            entity.HasOne(d => d.FkProduct).WithMany()
-                .HasForeignKey(d => d.FkProductId)
-                .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("collection_products__fk_product_id_fkey");
         });
 
         modelBuilder.Entity<Color>(entity =>

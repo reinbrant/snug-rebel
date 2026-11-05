@@ -1,5 +1,5 @@
 import type { Product3DModelItem } from '../types'
-import { API_BASE, readErrorMessage } from './config'
+import { API_BASE, apiFetch, readErrorMessage } from './config'
 
 // Files picked in the UI, before they are sent to the backend.
 export type StagedModel = {
@@ -19,7 +19,7 @@ export async function uploadProductModel(productId: string, staged: StagedModel)
   if (staged.previewFile) formData.append('previewFile', staged.previewFile)
   if (staged.modelName.trim()) formData.append('modelName', staged.modelName.trim())
 
-  const response = await fetch(`${API_BASE}/api/Product3DModel/upload`, {
+  const response = await apiFetch(`${API_BASE}/api/Product3DModel/upload`, {
     method: 'POST',
     body: formData,
   })

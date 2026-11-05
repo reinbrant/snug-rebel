@@ -7,7 +7,7 @@ import {
     type ConfirmedOrder,
 } from "./checkout.types";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_API !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "true";
 
 interface BackendPromoCode {
     pkPromoCodeId: string;
@@ -139,6 +139,7 @@ export async function submitCheckoutOrder(params: {
                     directItems: isBuyNow
                         ? items.map((i) => ({
                             productId: i.productId,
+                            productVariantId: i.variantId,
                             size: i.size,
                             color: i.color,
                             quantity: i.quantity,

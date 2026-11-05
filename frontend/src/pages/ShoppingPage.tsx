@@ -1,11 +1,10 @@
-/* eslint-disable react-hooks/purity */
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import { useCart } from "../context/cartContext";
 import PillButton from "../components/ui/PillButton";
 import ShopItemCard from "../components/shop/ShopItemCard";
 import ShopSidebar from "../components/shop/ShopSidebar";
-import { itemPath, ROUTES } from "../routes";
+import { itemPath } from "../routes";
 import {
 	CATEGORIES,
 	getProducts,
@@ -13,7 +12,7 @@ import {
 	type Product,
 	type SortKey,
 } from "../data/products";
-import type { CartLine } from "../api/cart";
+
 
 const effectivePrice = (p: Product) => p.salePrice ?? p.price;
 
@@ -89,21 +88,7 @@ export default function Shop() {
 
 	const { addItem, openCart } = useCart();
 
-	const handleBuyNow = (product: Product) => {
-		const buyNowItem: CartLine = {
-			id: "buynow-" + Date.now(),
-			variantId: `var_${product.id}_S`,
-			productId: product.id,
-			name: product.name,
-			imageUrl: product.imageSrc,
-			unitPrice: product.salePrice ?? product.price,
-			color: "Standard",
-			size: "S",
-			quantity: 1,
-			stock: product.stockLeft ?? 99,
-		};
-		navigate(ROUTES.checkout, { state: { buyNowItems: [buyNowItem] } });
-	};
+	const handleBuyNow = (product: Product) => navigate(itemPath(product.id));
 
 	const handleAddToCart = async (product: Product) => {
 		const ok = await addItem({ productId: product.id }, 1);

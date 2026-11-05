@@ -1,5 +1,5 @@
 import type { ItemBadgeVariant } from '../components/shop/ItemCardBadge'
-import { apiFetch } from '../api/api'
+import { apiFetch, resolveAssetUrl } from '../api/api'
 
 export type Category = 'tops' | 'bottoms' | 'outerwear' | 'best-selling' | 'accessories'
 export type SortKey = 'best-selling' | 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc'
@@ -41,24 +41,6 @@ const PLACEHOLDER =
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#7a7a7a"/></svg>',
     )
 
-const API_ORIGIN = ((import.meta.env.VITE_API_URL as string | undefined) ?? '')
-    .replace(/\/api\/?$/i, '')
-    .replace(/\/$/, '')
-
-export function resolveAssetUrl(url: string | undefined | null): string {
-    if (!url) return PLACEHOLDER
-    const trimmed = url.trim()
-    if (
-        !trimmed ||
-        /^(https?:)?\/\//i.test(trimmed) ||
-        trimmed.startsWith('data:') ||
-        trimmed.startsWith('blob:')
-    ) {
-        return trimmed || PLACEHOLDER
-    }
-    return `${API_ORIGIN}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`
-}
-
 const base = { imageSrc: PLACEHOLDER, rating: 5, reviewCount: 10, soldCount: 20 }
 
 export const MOCK_PRODUCTS: Product[] = [
@@ -78,17 +60,6 @@ interface BackendCategory {
     slug: string
 }
 
-interface Backend3DModel {
-    id: string
-    productId: string
-    modelUrl: string
-    previewImageUrl?: string | null
-    isActive: boolean
-}
-
-const isPlaceholderImage = (src?: string | null) =>
-    !src || src.startsWith('data:image/svg+xml')
-
 export async function getProducts(): Promise<Product[]> {
     if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         return MOCK_PRODUCTS
@@ -99,7 +70,7 @@ export async function getProducts(): Promise<Product[]> {
         apiFetch<BackendCategory[]>('/Category').catch(() => [] as BackendCategory[]),
     ])
 
-    // Map category IDs (ctg-...) and names to normalized lowercase slugs (tops, bottoms, etc.)
+    // Map category IDs and names to normalized lowercase slugs (tops, bottoms, etc.)
     const categoryMap = new Map<string, string>()
     for (const c of rawCategories) {
         const slug = (c.slug || c.categoryName || '').trim().toLowerCase()
@@ -108,39 +79,16 @@ export async function getProducts(): Promise<Product[]> {
         if (c.slug) categoryMap.set(c.slug.trim().toLowerCase(), slug)
     }
 
-    const enriched = await Promise.all(
-        rawProducts.map(async (p) => {
-            const normalizedCategories = new Set<string>()
-            for (const rawCat of p.categories ?? []) {
-                const key = String(rawCat).trim().toLowerCase()
-                const mapped = categoryMap.get(key)
-                if (mapped) normalizedCategories.add(mapped)
-                normalizedCategories.add(key)
-            }
+    return rawProducts.map((p) => {
+        const normalized = new Set<string>()
+        for (const rawCat of p.categories ?? []) {
+            const key = String(rawCat).trim().toLowerCase()
+            const mapped = categoryMap.get(key)
+            if (mapped) normalized.add(mapped)
+            normalized.add(key)
+        }
+        if ((p.soldCount ?? 0) > 0) normalized.add('best-selling')
 
-            if ((p.soldCount ?? 0) > 0) {
-                normalizedCategories.add('best-selling')
-            }
-
-            let imageSrc = p.imageSrc
-            // If ProductList returned the fallback gray SVG, check if there's a previewImageUrl in Product3DModel
-            if (isPlaceholderImage(imageSrc)) {
-                const models = await apiFetch<Backend3DModel[]>(
-                    `/Product3DModel/product/${encodeURIComponent(p.id)}`,
-                ).catch(() => [] as Backend3DModel[])
-                const activePreview = models.find((m) => m.isActive && m.previewImageUrl)?.previewImageUrl
-                if (activePreview) {
-                    imageSrc = activePreview
-                }
-            }
-
-            return {
-                ...p,
-                imageSrc: resolveAssetUrl(imageSrc),
-                categories: Array.from(normalizedCategories),
-            }
-        }),
-    )
-
-    return enriched
+        return { ...p, imageSrc: resolveAssetUrl(p.imageSrc), categories: Array.from(normalized) }
+    })
 }

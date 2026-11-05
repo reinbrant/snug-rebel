@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -17,6 +18,7 @@ public record CreateVariantRequest(
 );
 
 [Route("api/[controller]")]
+[Authorize(Roles = "Admin,Staff")]
 [ApiController]
 public class ProductVariantController : ControllerBase
 {

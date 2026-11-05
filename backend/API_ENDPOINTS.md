@@ -2,7 +2,7 @@
 
 Base URL for local development:
 
-- `http://localhost:5000` when the backend is running in the local dev environment
+- `http://localhost:5146` when the backend is running in the local dev environment
 - or the configured Vite/API origin used by the frontend
 
 All controllers are mounted under `/api`.
@@ -21,7 +21,7 @@ Controller: `AuthController`
 Route base: `/api/Auth`
 
 ### `POST /api/Auth/register`
-Creates a new customer account.
+Creates a customer account, signs it in with an HttpOnly session cookie, and returns the safe account profile. Passwords must contain at least 8 characters and at most 72 UTF-8 bytes. `phoneNumber` is optional. Both registration and login accept an optional `sessionToken` to transfer or merge a guest bag into the account. The guest token is cleared from the transferred cart.
 
 Request body:
 
@@ -45,9 +45,7 @@ Response:
   "lastName": "Doe",
   "phoneNumber": "+639171234567",
   "role": "Customer",
-  "isActive": true,
-  "createdAt": "2026-10-28T12:00:00Z",
-  "updatedAt": "2026-10-28T12:00:00Z"
+  "isActive": true
 }
 ```
 
@@ -58,7 +56,7 @@ Notes:
 - `PasswordHash` is intentionally not returned to the frontend.
 
 ### `POST /api/Auth/login`
-Authenticates a user and returns the user record (without the password hash).
+Authenticates a user, sets an HttpOnly session cookie, and returns the safe account profile. Send `credentials: 'include'` from browser clients for all account requests.
 
 Request body:
 
@@ -82,6 +80,18 @@ Response:
   "isActive": true
 }
 ```
+
+---
+
+### `GET /api/Auth/session`
+Returns the current active account profile, or 401 when signed out or inactive. Roles and account status are checked against the database on authenticated requests.
+
+### `POST /api/Auth/logout`
+Expires the session cookie; returns 204. A failed logout must leave the frontend signed in.
+
+### Customer ownership
+
+`GET /api/Order/mine` requires a session and returns only that account's orders. Account cart reads/writes and checkout require the matching authenticated user ID; other accounts cannot access them. Guest carts remain supported. Guest cart item updates, removal, and clearing require `X-Cart-Session` with the owning guest token. Collection endpoints have been removed; the legacy database tables are retained.
 
 ---
 
@@ -214,41 +224,6 @@ Updates a category.
 
 ### `DELETE /api/Category/{id}`
 Deletes a category if it is not assigned to products.
-
----
-
-## 4. Collection
-
-Controller: `CollectionController`
-Route base: `/api/Collection`
-
-### `GET /api/Collection`
-Returns all collections.
-
-### `GET /api/Collection/{id}`
-Returns one collection.
-
-### `POST /api/Collection`
-Creates a collection.
-
-Request body:
-
-```json
-{
-  "collectionName": "Summer Drop",
-  "slug": "summer-drop",
-  "description": "Fresh essentials for warm days",
-  "bannerUrl": "https://.../banner.jpg",
-  "isActive": true,
-  "launchDate": "2026-06-01"
-}
-```
-
-### `PUT /api/Collection/{id}`
-Updates a collection.
-
-### `DELETE /api/Collection/{id}`
-Deletes a collection.
 
 ---
 

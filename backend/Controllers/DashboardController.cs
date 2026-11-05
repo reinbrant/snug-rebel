@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -11,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Controllers;
 
 [Route("api/[controller]")]
+[Authorize(Roles = "Admin,Staff")]
 [ApiController]
 public class DashboardController : ControllerBase
 {
@@ -50,7 +52,7 @@ public class DashboardController : ControllerBase
         var leadingDays = (int)firstDayOfMonth.DayOfWeek;
         var calendarStart = firstDayOfMonth.AddDays(-leadingDays);
 
-        var calendarDays = Enumerable.Range(0, 35)
+        var calendarDays = Enumerable.Range(0, (int)Math.Ceiling((leadingDays + DateTime.DaysInMonth(monthStart.Year, monthStart.Month)) / 7d) * 7)
             .Select(offset => calendarStart.AddDays(offset))
             .Select(day =>
             {
@@ -81,126 +83,25 @@ public class DashboardController : ControllerBase
     [HttpGet("activities")]
     public async Task<IActionResult> GetActivities([FromQuery] string? status = null)
     {
-        var query = _context.DashboardNotifications.AsQueryable();
-
+        var query = _context.Orders.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(status) && !status.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(n => n.Status == status);
+            if (!Enum.TryParse<OrderStatus>(status, true, out var orderStatus))
+                return BadRequest(new { message = "Invalid order status." });
+            query = query.Where(o => o.Status == orderStatus);
         }
-
-        var notifications = await query
-            .OrderByDescending(n => n.ArrivalTime)
-            .Take(20)
-            .Select(n => new
-            {
-                orderId = n.OrderId,
-                orderNumber = n.OrderNumber,
-                category = n.Category,
-                weight = n.Weight,
-                company = n.Company,
-                arrivalTime = n.ArrivalTime,
-                route = n.Route,
-                price = n.Price,
-                status = n.Status,
-            })
-            .ToListAsync();
-
-        if (!notifications.Any())
+        var orders = await query.Include(o => o.FkShippingAddress).Include(o => o.OrderItems)
+            .OrderByDescending(o => o.PlacedAt).Take(20).ToListAsync();
+        return Ok(new { items = orders.Select(order => new
         {
-            await SeedNotificationRowsAsync();
-            notifications = await query
-                .OrderByDescending(n => n.ArrivalTime)
-                .Take(20)
-                .Select(n => new
-                {
-                    orderId = n.OrderId,
-                    orderNumber = n.OrderNumber,
-                    category = n.Category,
-                    weight = n.Weight,
-                    company = n.Company,
-                    arrivalTime = n.ArrivalTime,
-                    route = n.Route,
-                    price = n.Price,
-                    status = n.Status,
-                })
-                .ToListAsync();
-        }
-
-        if (!notifications.Any())
-        {
-            var realOrders = await _context.Orders
-                .Include(o => o.FkShippingAddress)
-                .Include(o => o.OrderItems)
-                .OrderByDescending(o => o.PlacedAt)
-                .Take(20)
-                .ToListAsync();
-
-            notifications = realOrders
-                .Select(order => new
-                {
-                    orderId = order.PkOrderId,
-                    orderNumber = order.OrderNumber,
-                    category = order.OrderItems.FirstOrDefault()?.ProductName ?? "General",
-                    weight = order.OrderItems.Sum(item => item.Quantity) + " items",
-                    company = order.FkShippingAddress != null ? order.FkShippingAddress.City : "Snug Rebel",
-                    arrivalTime = order.PlacedAt,
-                    route = order.FkShippingAddress != null
-                        ? $"{order.FkShippingAddress.City} - {order.FkShippingAddress.Province}"
-                        : "Local delivery",
-                    price = order.TotalAmount,
-                    status = order.Status.ToString(),
-                })
-                .ToList();
-        }
-
-        return Ok(new { items = notifications });
-    }
-
-    private async Task SeedNotificationRowsAsync()
-    {
-        var orders = await _context.Orders
-            .Include(o => o.FkShippingAddress)
-            .Include(o => o.OrderItems)
-            .OrderByDescending(o => o.PlacedAt)
-            .Take(20)
-            .ToListAsync();
-
-        if (!orders.Any())
-        {
-            return;
-        }
-
-        var rows = orders
-            .Select(order => new DashboardNotification
-            {
-                OrderId = order.PkOrderId,
-                OrderNumber = order.OrderNumber,
-                Category = order.OrderItems.FirstOrDefault()?.ProductName ?? "General",
-                Weight = $"{order.OrderItems.Sum(item => item.Quantity)} items",
-                Company = order.FkShippingAddress?.City ?? "Snug Rebel",
-                ArrivalTime = order.PlacedAt,
-                Route = order.FkShippingAddress != null
-                    ? $"{order.FkShippingAddress.City} - {order.FkShippingAddress.Province}"
-                    : "Local delivery",
-                Price = order.TotalAmount,
-                Status = order.Status.ToString(),
-                CreatedAt = DateTime.UtcNow,
-            })
-            .ToList();
-
-        foreach (var row in rows)
-        {
-            row.PkDashboardNotificationId = $"dnotif-{Guid.NewGuid():N}";
-        }
-
-        _context.DashboardNotifications.AddRange(rows);
-        await _context.SaveChangesAsync();
-    }
-
-    private static int GetMetricValue(List<DashboardMetric> metrics, string metricKey)
-    {
-        var metric = metrics.FirstOrDefault(m => m.MetricKey == metricKey);
-        return metric == null ? 0 : Convert.ToInt32(metric.MetricValue);
+            orderId = order.PkOrderId, orderNumber = order.OrderNumber,
+            category = order.OrderItems.FirstOrDefault()?.ProductName ?? "General",
+            weight = $"{order.OrderItems.Sum(i => i.Quantity)} items",
+            company = order.FkShippingAddress?.City ?? "Snug Rebel",
+            arrivalTime = order.PlacedAt,
+            route = $"{order.FkShippingAddress?.City} - {order.FkShippingAddress?.Province}",
+            price = order.TotalAmount, status = order.Status.ToString()
+        }) });
     }
 
     private static DateTime? TryParseMonth(string? month)

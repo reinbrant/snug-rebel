@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { CartLine, CartTarget, VariantChange } from '../api/cart'
+import type { CartLine, CartTarget, VariantChange, CartOwner } from '../api/cart'
 
 export type CartContextValue = {
     lines: CartLine[]
@@ -8,6 +8,7 @@ export type CartContextValue = {
     status: 'loading' | 'ready' | 'error'
     error: string | null
     busy: boolean
+    owner: CartOwner
 
     isOpen: boolean
     openCart: () => void

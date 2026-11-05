@@ -91,3 +91,67 @@
     gap: 8px;
     align-items: center;
 }
+
+.m3d-preview {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+    border-radius: 12px;
+}
+
+.m3d-preview-heading,
+.m3d-preview-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.m3d-preview-heading h4 {
+    margin: 0;
+}
+
+.m3d-preview-header {
+    padding: 12px;
+}
+
+.m3d-preview-header strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.m3d-preview-canvas {
+    position: relative;
+    height: clamp(240px, 40vh, 380px);
+    background: radial-gradient(ellipse at center, rgba(128, 128, 128, 0.06), rgba(128, 128, 128, 0.18));
+}
+
+.m3d-viewer-host,
+.m3d-viewer-host model-viewer {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.m3d-viewer-host[hidden] {
+    display: none;
+}
+
+.m3d-preview-message {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+}
+
+.m3d-preview > .m3d-muted {
+    margin: 0;
+    padding: 12px;
+}
