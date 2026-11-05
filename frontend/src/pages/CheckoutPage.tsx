@@ -1,13 +1,13 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import checkoutHeaderSvg from "../assets/checkout_page_header.svg";
 import redStarGraphicSvg from "../assets/checkout_redstar_graphic.svg";
 import orderNoContainerSvg from "../assets/checkout_orderno_container.svg";
 import AngledButton from "../components/ui/AngledButton";
 import { useCart } from "../context/cartContext";
 import type { CartLine } from "../api/cart.types";
-import { getSessionToken } from "../api/session";
+import { useAuth } from '../context/authContext';
 import {
 	fetchBarangaysByCity,
 	fetchCitiesByProvince,
@@ -71,9 +71,17 @@ function formatDeliveryRange(
 }
 
 export default function CheckoutPage() {
+    const { status } = useAuth();
+    if (status === 'loading') return <div className="p-8 font-display" role="status">Checking your session…</div>;
+    if (status === 'error') return <p className="p-8 font-display">Reconnect to continue checking out.</p>;
+    return <CheckoutForm />;
+}
+
+function CheckoutForm() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { lines, subtotal: cartSubtotal, openCart, clear } = useCart();
+	const { lines, subtotal: cartSubtotal, openCart, clear, owner, busy: cartBusy } = useCart();
+    const { user } = useAuth();
 
 	// Support "Buy Now" single-item checkout via router state
 	const buyNowItems = (location.state as { buyNowItems?: CartLine[] } | null)
@@ -98,10 +106,10 @@ export default function CheckoutPage() {
 
 	// Form state
 	const [values, setValues] = useState<CheckoutFormValues>({
-		firstName: "",
-		lastName: "",
-		email: "",
-		mobileNumber: "",
+		firstName: user?.firstName ?? "",
+		lastName: user?.lastName ?? "",
+		email: user?.userEmail ?? "",
+		mobileNumber: user?.phoneNumber ?? "",
 		line1: "",
 		provinceCode: "",
 		provinceName: "",
@@ -319,6 +327,7 @@ export default function CheckoutPage() {
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
 		setSubmitError(null);
+        if (cartBusy) return;
 
 		if (checkoutItems.length === 0) {
 			setSubmitError("Your bag is empty. Add items before checking out.");
@@ -361,7 +370,7 @@ export default function CheckoutPage() {
 			}
 
 			const confirmed = await submitCheckoutOrder({
-				owner: { sessionToken: getSessionToken() },
+				owner,
 				isBuyNow: Boolean(buyNowItems),
 				items: checkoutItems,
 				subtotal: activeSubtotal,
@@ -667,6 +676,8 @@ export default function CheckoutPage() {
 						alt="CHECKOUT"
 						className="h-14 sm:h-16 w-auto select-none pointer-events-none"
 					/>
+                    {!user && <p className="mt-3 text-sm font-display">Have an account? <Link className="font-bold underline" to={`${ROUTES.signIn}?returnTo=${encodeURIComponent(ROUTES.checkout)}`} state={{ checkoutState: location.state }}>Sign in</Link> to save this order to your account, or continue as a guest.</p>}
+
 				</div>
 
 				<form
@@ -1545,7 +1556,7 @@ export default function CheckoutPage() {
 									type="submit"
 									className="w-full"
 									disabled={
-										submitting || checkoutItems.length === 0
+										submitting || cartBusy || checkoutItems.length === 0
 									}
 								>
 									{submitting

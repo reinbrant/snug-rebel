@@ -10,13 +10,3 @@ public class CategoryRequest
     public string? FkParentCategoryId { get; set; }
     public bool IsActive { get; set; } = true;
 }
-
-public class CollectionRequest
-{
-    [Required, MaxLength(120)] public string CollectionName { get; set; } = "";
-    [MaxLength(140)] public string? Slug { get; set; }
-    public string? Description { get; set; }
-    [MaxLength(500)] public string? BannerUrl { get; set; }
-    public DateOnly? LaunchDate { get; set; }
-    public bool IsActive { get; set; }
-}

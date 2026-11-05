@@ -3,7 +3,10 @@ export const ROUTES = {
   shop: '/shop',
   about: '/about',
   tracking: '/tracking',
-  checkout: '/checkout'
+  checkout: '/checkout',
+  signIn: '/sign-in',
+  signUp: '/sign-up',
+  account: '/account'
 } as const
 
 export type Page = keyof typeof ROUTES

@@ -100,11 +100,8 @@ def check():
     cat_id = cat['pkCategoryId']
     request('POST', '/api/Category', {'categoryName': MARK}, status=409)
     request('PUT', '/api/Category/' + cat_id, {'categoryName': MARK, 'isActive': False})
-    collection = request('POST', '/api/Collection', {'collectionName': MARK, 'launchDate': '2026-11-05'}, status=201)
-    collection_id = collection['pkCollectionId']
-    request('PUT', '/api/Collection/' + collection_id, {'collectionName': MARK, 'launchDate': '2026-12-01', 'isActive': True})
-    assert request('GET', '/api/Collection/' + collection_id)['launchDate'] == '2026-12-01'
-    print('PASS category/collection creation, editing, duplicate handling, date format')
+    request('GET', '/api/Collection', status=404)
+    print('PASS categories, duplicate handling, removed collections endpoint')
 
     sizes = [s for s in request('GET', '/api/Size') if s['label'] != 'One size']
     colors = [c for c in request('GET', '/api/Color') if c['name'] != 'Standard']
@@ -200,10 +197,9 @@ def check():
     request('GET', '/api/Product/' + product_id, status=404)
     request('POST', '/api/Cart/add', {'sessionToken': TOKEN, 'productId': product_id, 'quantity': 1}, 404)
     request('DELETE', '/api/Category/' + cat_id, status=409)
-    request('DELETE', '/api/Collection/' + collection_id)
     request('POST', '/api/Auth/logout', status=204)
     request('GET', '/api/Product', status=401)
-    print('PASS deactivation, category-in-use protection, collection deletion, logout')
+    print('PASS deactivation, category-in-use protection, logout')
 
 
 def cleanup():
@@ -215,14 +211,13 @@ def cleanup():
     DELETE FROM order_status_history WHERE _fk_order_id IN (SELECT _pk_order_id FROM orders WHERE contact_email='{EMAIL}');
     DELETE FROM order_items WHERE _fk_order_id IN (SELECT _pk_order_id FROM orders WHERE contact_email='{EMAIL}');
     DELETE FROM orders WHERE contact_email='{EMAIL}';
-    DELETE FROM cart_items WHERE _fk_cart_id IN (SELECT _pk_cart_id FROM carts WHERE session_token='{TOKEN}') OR _fk_product_variant_id IN (SELECT _pk_product_variant_id FROM product_variants WHERE _fk_product_id IN (SELECT _pk_product_id FROM products WHERE slug IN ('{MARK}','{MARK}-second')));
-    DELETE FROM carts WHERE session_token='{TOKEN}';
+    DELETE FROM cart_items WHERE _fk_cart_id IN (SELECT _pk_cart_id FROM carts WHERE session_token='{TOKEN}' OR _fk_user_id IN (SELECT _pk_user_id FROM users WHERE user_email='{EMAIL}')) OR _fk_product_variant_id IN (SELECT _pk_product_variant_id FROM product_variants WHERE _fk_product_id IN (SELECT _pk_product_id FROM products WHERE slug IN ('{MARK}','{MARK}-second')));
+    DELETE FROM carts WHERE session_token='{TOKEN}' OR _fk_user_id IN (SELECT _pk_user_id FROM users WHERE user_email='{EMAIL}');
     DELETE FROM product_images WHERE _fk_product_id IN (SELECT _pk_product_id FROM products WHERE slug IN ('{MARK}','{MARK}-second'));
     DELETE FROM product_3d_models WHERE _fk_product_id IN (SELECT _pk_product_id FROM products WHERE slug IN ('{MARK}','{MARK}-second'));
     DELETE FROM product_variants WHERE _fk_product_id IN (SELECT _pk_product_id FROM products WHERE slug IN ('{MARK}','{MARK}-second'));
     DELETE FROM products WHERE slug IN ('{MARK}','{MARK}-second');
     DELETE FROM categories WHERE slug='{MARK}';
-    DELETE FROM collections WHERE slug='{MARK}';
     DELETE FROM addresses WHERE recipient_name='{MARK}';
     DELETE FROM audit_logs WHERE _fk_user_id IN (SELECT _pk_user_id FROM users WHERE user_email='{EMAIL}');
     DELETE FROM users WHERE user_email='{EMAIL}';

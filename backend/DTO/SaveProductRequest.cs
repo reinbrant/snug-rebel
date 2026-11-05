@@ -14,7 +14,7 @@ public class SaveProductRequest
     public bool IsActive { get; set; } = true;
     public bool HasSizes { get; set; } = true;
     public bool HasColors { get; set; } = true;
-    // Omitted collections preserve existing rows for older API clients.
+    // Omitted image/inventory lists preserve existing rows for older API clients.
     public List<SaveVariantRequest>? Variants { get; set; }
     public List<SaveImageRequest>? Images { get; set; }
 }

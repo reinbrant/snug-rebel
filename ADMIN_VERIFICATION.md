@@ -8,7 +8,7 @@ Reproduce with `python3 scripts/verify_admin.py` while the development API is ru
 
 - Login failure/success, customer rejection from admin endpoints, HttpOnly cookie session, logout, and protected product writes/reads.
 - Categories: create, update, duplicate conflict, and deletion protection while assigned to products.
-- Collections: create, edit, date-only launch dates, and delete.
+- Collection endpoints have been removed and return 404.
 - Images: upload, reject unsupported type, serve image bytes, persist `product_images`, primary selection, replace image lists, and retain existing rows after a failed save.
 - Products: create/edit, stock/zero price override persistence, four independent size/color combinations, invalid foreign-key/variant ownership validation, and deactivation.
 - Transaction rollback after SKU conflict; a failed update preserves product name, stock, and image records.
@@ -23,7 +23,7 @@ Exercised the running React admin and storefront with Playwright and system Chro
 
 - Protected routes, email login/logout, session restoration after reload, and persistent theme.
 - Dashboard CSV export, shipment report download, Day/Week/Month selection, and shipment navigation.
-- Category/collection creation, editing, collection deletion, and visible category-in-use errors.
+- Category creation/editing and visible category-in-use errors. Collection navigation and routes have been removed.
 - Product creation/editing/reload, image upload/display, inventory persistence, and deactivation.
 - All four size/color toggle combinations survive saves and appear correctly in the storefront; an item without options can be added to the bag.
 - Simulated server conflict keeps the product editor open and displays the error.
@@ -34,3 +34,5 @@ Exercised the running React admin and storefront with Playwright and system Chro
 ## Build checks and limits
 
 Backend, admin, and storefront builds passed. Both frontend lint commands passed without errors. Existing warnings remain for backend package resolution / the Microsoft.OpenApi advisory and two admin React lint warnings. The configured Cloudinary credentials were absent, so upload verification exercised local storage; the external Cloudinary service was not tested. Production must use configured Cloudinary or durable upload storage. No deployment was performed.
+
+The admin API regression suite passed again after adding customer authentication and removing collections. Chromium also confirmed that admin login works, collection navigation is absent, and `/collections` redirects to the dashboard.
