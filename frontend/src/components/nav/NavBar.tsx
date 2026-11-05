@@ -10,17 +10,15 @@ import ShopMenu from "./ShopMenu.tsx";
 export type Utility = "search" | "cart" | "account";
 
 type NavBarProps = {
-	/** Current page (null on pages that aren't in the nav). Drives the selected style. */
 	page: Page | null;
 	onNavigate: (page: Page) => void;
-	/** Called when a SHOP dropdown filter is picked (null = all). */
 	onShopFilter: (filter: string | null) => void;
-	/** Fires when a utility icon is toggled on (its name) or off (null). One is active at a time. */
 	onUtilityChange?: (utility: Utility | null) => void;
 	cartOpen?: boolean;
 	cartCount?: number;
     accountLabel?: string;
     accountActive?: boolean;
+    searchActive?: boolean; // <-- Add this prop
 };
 
 // Sizes live in index.css (--nav-h, --nav-edge, --nav-logo-h, ...).
@@ -44,6 +42,7 @@ export default function NavBar({
 	cartCount,
     accountLabel = 'Account',
     accountActive = false,
+	searchActive = false,
 }: NavBarProps) {
 	const scrolledAway = useHideOnScroll();
 	const [shopMenuOpen, setShopMenuOpen] = useState(false);
@@ -176,7 +175,7 @@ export default function NavBar({
 					<NavIconButton
 						label="Search"
 						icon={Search}
-						active={activeUtility === "search"}
+						active={searchActive}
 						onClick={() => toggleUtility("search")}
 						className={["pointer-events-auto", slide(hidden)].join(
 							" ",
