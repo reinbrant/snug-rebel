@@ -66,14 +66,6 @@ export type CategoryItem = {
   status: 'Active' | 'Hidden'
 }
 
-export type CollectionItem = {
-  id: string
-  name: string
-  products: number
-  status: 'Live' | 'Scheduled'
-  launch: string
-}
-
 export type OrderStatus = 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Refunded'
 
 export type OrderItem = {

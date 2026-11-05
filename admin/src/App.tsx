@@ -11,7 +11,6 @@ import {
 import {
   Activity,
   Download,
-  Layers3,
   LogOut,
   MoonStar,
   Package,
@@ -85,7 +84,6 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/products', label: 'Products', icon: Package },
   { to: '/categories', label: 'Categories', icon: Tag },
-  { to: '/collections', label: 'Collections', icon: Layers3 },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/customers', label: 'Customers', icon: Users },
 ]
@@ -155,7 +153,6 @@ function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/collections" element={<CollectionsPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/customers" element={<CustomersPage />} />
         </Route>
@@ -692,70 +689,62 @@ function ProductsPage() {
   )
 }
 
-function CategoriesPage() { return <CatalogSetupPage kind="Category" /> }
-function CollectionsPage() { return <CatalogSetupPage kind="Collection" /> }
-
-function CatalogSetupPage({ kind }: { kind: 'Category' | 'Collection' }) {
+function CategoriesPage() {
   const [items, setItems] = useState<any[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const blank = { name: '', slug: '', description: '', isActive: true, launchDate: '' }
+  const blank = { name: '', slug: '', description: '', isActive: true }
   const [form, setForm] = useState(blank)
-  const isCategory = kind === 'Category'
-  const title = isCategory ? 'Categories' : 'Collections'
-  const nameKey = isCategory ? 'categoryName' : 'collectionName'
-  const idKey = isCategory ? 'pkCategoryId' : 'pkCollectionId'
 
   useEffect(() => {
-    requestJson(`/api/${kind}`).then(setItems).catch(e => setError(e.message))
-  }, [kind])
+    requestJson('/api/Category').then(setItems).catch(e => setError(e.message))
+  }, [])
 
   async function save(event: React.FormEvent) {
     event.preventDefault(); setError(''); setSaving(true)
     try {
-      const item = await requestJson(`/api/${kind}${editing ? `/${editing}` : ''}`, {
+      const item = await requestJson(`/api/Category${editing ? `/${editing}` : ''}`, {
         method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [nameKey]: form.name, slug: form.slug, description: form.description,
-          isActive: form.isActive, ...(isCategory ? {} : { launchDate: form.launchDate || null }) }),
+        body: JSON.stringify({ categoryName: form.name, slug: form.slug, description: form.description,
+          isActive: form.isActive }),
       })
-      setItems(current => [item, ...current.filter(i => i[idKey] !== item[idKey])]); setOpen(false)
+      setItems(current => [item, ...current.filter(i => i.pkCategoryId !== item.pkCategoryId)]); setOpen(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save.') }
     finally { setSaving(false) }
   }
 
   async function remove(item: any) {
-    if (!window.confirm(`Delete ${item[nameKey]}?`)) return
+    if (!window.confirm(`Delete ${item.categoryName}?`)) return
     try {
-      await requestJson(`/api/${kind}/${item[idKey]}`, { method: 'DELETE' })
-      setItems(current => current.filter(i => i[idKey] !== item[idKey]))
+      await requestJson(`/api/Category/${item.pkCategoryId}`, { method: 'DELETE' })
+      setItems(current => current.filter(i => i.pkCategoryId !== item.pkCategoryId))
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete.') }
   }
 
   return <div className="page-stack">
-    <section className="page-header"><div><p className="eyebrow">Catalog setup</p><h2>{title}</h2></div>
-      <button className="primary-button small-button" onClick={() => { setForm(blank); setEditing(null); setError(''); setOpen(true) }}>Add {kind.toLowerCase()}</button>
+    <section className="page-header"><div><p className="eyebrow">Catalog setup</p><h2>Categories</h2></div>
+      <button className="primary-button small-button" onClick={() => { setForm(blank); setEditing(null); setError(''); setOpen(true) }}>Add category</button>
     </section>
     {error && <p className="error-banner" role="alert">{error}</p>}
     {open && <form className="panel-card product-form-grid" onSubmit={save}>
-      <label><span>Name</span><input required maxLength={isCategory ? 100 : 120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-      <label><span>Slug (optional)</span><input maxLength={isCategory ? 120 : 140} value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} /></label>
+      <label><span>Name</span><input required maxLength={100} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+      <label><span>Slug (optional)</span><input maxLength={120} value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} /></label>
       <label><span>Description</span><textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
-      {!isCategory && <label><span>Launch date</span><input type="date" value={form.launchDate} onChange={e => setForm({ ...form, launchDate: e.target.value })} /></label>}
       <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /></label>
       <div className="page-actions"><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button></div>
     </form>}
     <section className="panel-card"><div className="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Slug</th>{!isCategory && <th>Launch</th>}<th>Status</th><th>Actions</th></tr></thead>
-      <tbody>{items.map(item => <tr key={item[idKey]}>
-        <td>{item[nameKey]}</td><td>{item.slug}</td>{!isCategory && <td>{item.launchDate || 'N/A'}</td>}
+      <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>{items.map(item => <tr key={item.pkCategoryId}>
+        <td>{item.categoryName}</td><td>{item.slug}</td>
         <td>{item.isActive ? 'Active' : 'Hidden'}</td>
         <td><button className="link-button" onClick={() => {
-          setEditing(item[idKey]); setForm({ name: item[nameKey], slug: item.slug, description: item.description || '', isActive: item.isActive, launchDate: item.launchDate || '' }); setOpen(true); setError('')
+          setEditing(item.pkCategoryId); setForm({ name: item.categoryName, slug: item.slug, description: item.description || '', isActive: item.isActive }); setOpen(true); setError('')
         }}>Edit</button><button className="link-button danger" onClick={() => void remove(item)}>Delete</button></td>
       </tr>)}</tbody>
-    </table>{items.length === 0 && <p>No {title.toLowerCase()} found.</p>}</div></section>
+    </table>{items.length === 0 && <p>No categories found.</p>}</div></section>
   </div>
 }
 
