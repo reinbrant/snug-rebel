@@ -25,25 +25,41 @@ public class PaymentController : ControllerBase
             var order = await _context.Orders.FirstOrDefaultAsync(o => o.PkOrderId == request.OrderId);
             if (order == null) return NotFound(new { error = "OrderNotFound", message = "Order does not exist." });
 
-            if (order.Status != OrderStatus.Pending)
-                return BadRequest(new { error = "InvalidOrderStatus", message = $"Order cannot be paid. Current status: {order.Status}" });
-
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
-                // 1. Create Payment Record
-                var payment = new Payment
+                if (order.Status != OrderStatus.Pending)
                 {
-                    FkOrderId = order.PkOrderId,
-                    Method = request.Method,
-                    Status = PaymentStatus.Paid,
-                    Amount = order.TotalAmount,
-                    ProviderReference = request.ProviderReference,
-                    PaidAt = DateTime.UtcNow,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Payments.Add(payment);
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { error = "InvalidOrderStatus", message = $"Order cannot be paid. Current status: {order.Status}" });
+                }
+
+                // 1. Find existing pending payment created at checkout or create a new one
+                var payment = await _context.Payments
+                    .FirstOrDefaultAsync(p => p.FkOrderId == order.PkOrderId && p.Status == PaymentStatus.Pending);
+
+                if (payment != null)
+                {
+                    payment.Method = request.Method;
+                    payment.Status = PaymentStatus.Paid;
+                    payment.ProviderReference = request.ProviderReference;
+                    payment.PaidAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    payment = new Payment
+                    {
+                        FkOrderId = order.PkOrderId,
+                        Method = request.Method,
+                        Status = PaymentStatus.Paid,
+                        Amount = order.TotalAmount,
+                        ProviderReference = request.ProviderReference,
+                        PaidAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Payments.Add(payment);
+                }
 
                 // 2. Update Order Status
                 order.Status = OrderStatus.Paid;
@@ -54,7 +70,7 @@ public class PaymentController : ControllerBase
                 {
                     FkOrderId = order.PkOrderId,
                     Status = OrderStatus.Paid,
-                    ChangedBy = order.FkUserId, // The customer processing the payment
+                    ChangedBy = order.FkUserId, // Null for guests
                     ChangedAt = DateTime.UtcNow
                 };
                 _context.OrderStatusHistories.Add(history);
@@ -67,7 +83,7 @@ public class PaymentController : ControllerBase
             catch (Exception dbEx)
             {
                 await transaction.RollbackAsync();
-                throw dbEx; // Pass out to outer catch block
+                throw dbEx;
             }
         }
         catch (Exception ex)

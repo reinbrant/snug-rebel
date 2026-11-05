@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { ItemDetail as Item, Review } from "../api/items";
+import { useCart } from "../context/cartContext";
 import AngledButton from "../components/ui/AngledButton";
 import ColorSwatches from "../components/item/ColorSwatches";
 import PillButton from "../components/ui/PillButton";
@@ -11,6 +12,7 @@ import StarRating from "../components/ui/StarRating";
 import { formatPrice } from "../helpers/priceFormat";
 import { useItemDetail } from "../hooks/useItemDetail";
 import { ROUTES } from "../routes";
+import type { CartLine } from "../api/cart";
 
 const fieldLabel =
 	"font-display text-[1.75rem] font-bold leading-none [font-stretch:62%]";
@@ -64,14 +66,41 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 	);
 	const [quantity, setQuantity] = useState(1);
 
-	const isOnSale =
-		item.salePrice !== undefined && item.salePrice < item.price;
-	const outOfStock = item.stock <= 0;
+	const navigate = useNavigate();
 
-	const selection = { itemId: item.id, color, size, quantity };
-	// TODO (backend): send `selection` to the cart / checkout endpoints.
-	const handleBuyNow = () => console.log("buy now", selection);
-	const handleAddToBag = () => console.log("add to bag", selection);
+	const selectedVariant = item.variants?.find(v => (!item.sizes.length || v.size === size) && (!item.colors.length || v.color === color));
+	const price = selectedVariant?.priceOverride ?? item.price;
+	const stock = selectedVariant?.stock ?? (item.variants?.length ? 0 : item.stock);
+	const isOnSale = item.salePrice != null && item.salePrice < price;
+	const outOfStock = stock <= 0;
+	const missingOptions = (item.sizes.length > 0 && !size) || (item.colors.length > 0 && !color);
+
+	const { addItem, openCart, busy } = useCart();
+
+	const handleAddToBag = async () => {
+		if (missingOptions || outOfStock) return;
+		const ok = await addItem({ productId: item.id, size: size || null, color: color || null, productVariantId: selectedVariant?.id }, quantity);
+		if (ok) openCart();
+	};
+
+	const handleBuyNow = () => {
+		if (missingOptions || outOfStock) return;
+
+		const buyNowItem: CartLine = {
+			id: "buynow-" + Date.now(),
+			variantId: selectedVariant?.id ?? item.id,
+			productId: item.id,
+			name: item.name,
+			imageUrl: item.imageSrc,
+			unitPrice: item.salePrice ?? price,
+			color: color || item.colors?.[0]?.name || "Standard",
+			size: size,
+			quantity: quantity,
+			stock,
+		};
+
+		navigate(ROUTES.checkout, { state: { buyNowItems: [buyNowItem] } });
+	};
 
 	return (
 		<div className="bg-white">
@@ -106,7 +135,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 							<p className="mt-1 font-display text-xl font-bold text-neutral-500 [font-stretch:62%]">
 								{outOfStock
 									? "Out of stock"
-									: `Stock: ${item.stock}`}
+									: `Stock: ${stock}`}
 							</p>
 						</div>
 
@@ -123,12 +152,12 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 										<span className="sr-only">
 											Original price{" "}
 										</span>
-										{formatPrice(item.price)}
+										{formatPrice(price)}
 									</s>
 								</>
 							) : (
 								<span className="text-[clamp(2.75rem,4.8vw,5.25rem)] leading-none">
-									{formatPrice(item.price)}
+									{formatPrice(price)}
 								</span>
 							)}
 						</p>
@@ -178,14 +207,14 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 								<QuantityStepper
 									value={quantity}
 									onChange={setQuantity}
-									max={item.stock}
+									max={stock}
 									labelledBy="item-quantity-label"
 								/>
 								<div className="flex flex-wrap gap-x-6 gap-y-4 lg:ml-auto lg:mr-14">
 									<AngledButton
 										variant="buyNow"
 										className="w-full sm:w-56 xl:w-64"
-										disabled={outOfStock}
+										disabled={outOfStock || busy || missingOptions || quantity > stock}
 										onClick={handleBuyNow}
 									>
 										Buy Now
@@ -193,7 +222,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 									<AngledButton
 										variant="addToBag"
 										className="w-full sm:w-56 xl:w-64"
-										disabled={outOfStock}
+										disabled={outOfStock || busy || missingOptions || quantity > stock}
 										onClick={handleAddToBag}
 									>
 										Add to Bag

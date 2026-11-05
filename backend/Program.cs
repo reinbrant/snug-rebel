@@ -5,6 +5,7 @@ using backend.Models;
 using backend.Services;
 using Scalar.AspNetCore;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
@@ -17,6 +18,15 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddProblemDetails();   // consistent error shape (from the standards)
 builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();          // built-in OpenAPI document
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
+{
+    options.Cookie.Name = "snug-admin";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = builder.Environment.IsDevelopment() ? SameSiteMode.Lax : SameSiteMode.None;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
+    options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
+});
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<CloudinaryService>();
 
@@ -25,41 +35,23 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
                      ?? ["http://localhost:5173"];
 builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
-// Database and Enum Configuration
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// Database configuration
+// NOTE: enums are NOT mapped as native Postgres enums. The existing tables store them as plain
+// integers (see InitialCreate and the SQL seed scripts), so EF writes them as int by default.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:DefaultConnection with the Neon connection string.");
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-
-dataSourceBuilder.MapEnum<AddressType>("address_type");
-dataSourceBuilder.MapEnum<DiscountType>("discount_type");
-dataSourceBuilder.MapEnum<OrderStatus>("order_status");
-dataSourceBuilder.MapEnum<PaymentMethod>("payment_method");
-dataSourceBuilder.MapEnum<PaymentStatus>("payment_status");
-dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status");
-dataSourceBuilder.MapEnum<UserRole>("user_role");
 
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(dataSource, o =>
-    {
-        o.MapEnum<AddressType>("address_type");
-        o.MapEnum<DiscountType>("discount_type");
-        o.MapEnum<OrderStatus>("order_status");
-        o.MapEnum<PaymentMethod>("payment_method");
-        o.MapEnum<PaymentStatus>("payment_status");
-        o.MapEnum<ShipmentStatus>("shipment_status");
-        o.MapEnum<UserRole>("user_role");
-    }));
+    options.UseNpgsql(dataSource));
 
+Directory.CreateDirectory(Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads"));
+builder.Environment.WebRootPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot");
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-}
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -73,7 +65,15 @@ if (app.Environment.IsDevelopment())
 else
     app.UseHttpsRedirection();
 
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider
+    {
+        Mappings = { [".glb"] = "model/gltf-binary" }
+    }
+});
 app.UseCors();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");

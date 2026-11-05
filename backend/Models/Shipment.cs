@@ -10,6 +10,8 @@ public partial class Shipment
 
     public string FkOrderId { get; set; } = null!;
 
+    public string? FkCourierId { get; set; }
+    
     public string? Courier { get; set; }
 
     public string? TrackingNumber { get; set; }
@@ -20,4 +22,7 @@ public partial class Shipment
 
     [JsonIgnore]
     public virtual Order FkOrder { get; set; } = null!;
+
+    [JsonIgnore]
+    public virtual Courier? FkCourier { get; set; }
 }

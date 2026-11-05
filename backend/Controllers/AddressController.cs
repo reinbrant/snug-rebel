@@ -25,7 +25,7 @@ public class AddressController : ControllerBase
             if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "InvalidUserId", message = "UserId is required." });
 
             var addresses = await _context.Addresses
-                .Where(a => a.FkUserId == userId)
+                .Where(a => a.FkUserId == userId && a.ArchivedAt == null)
                 .OrderByDescending(a => a.IsDefault)
                 .ThenByDescending(a => a.CreatedAt)
                 .ToListAsync();
@@ -39,42 +39,67 @@ public class AddressController : ControllerBase
         }
     }
 
+
+    // Revised for guest checkout support: if FkUserId is null, the address is treated as a guest address and not linked to any user.
     [HttpPost("create")]
-    public async Task<IActionResult> CreateAddress([FromBody] Address request)
+    public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
     {
         try
         {
             if (request == null) return BadRequest(new { error = "NullRequest", message = "Request body is empty." });
-            
-            var userExists = await _context.Users.AnyAsync(u => u.PkUserId == request.FkUserId);
-            if (!userExists) return NotFound(new { error = "UserNotFound", message = "The specified user does not exist." });
 
-            // If this is set as default, unset other defaults of the same type for this user
-            if (request.IsDefault)
+            // Truncate user ID if it exceeds the 40-character database column limit
+            if (!string.IsNullOrEmpty(request.FkUserId) && request.FkUserId.Length > 40)
             {
-                var existingDefaults = await _context.Addresses
-                    .Where(a => a.FkUserId == request.FkUserId && a.AddressType == request.AddressType && a.IsDefault)
-                    .ToListAsync();
+                request.FkUserId = request.FkUserId.Substring(0, 40);
+            }
 
-                foreach (var addr in existingDefaults)
+            if (!string.IsNullOrEmpty(request.FkUserId))
+            {
+                var userExists = await _context.Users.AnyAsync(u => u.PkUserId == request.FkUserId);
+                if (!userExists) return NotFound(new { error = "UserNotFound", message = "The specified user does not exist." });
+
+                if (request.IsDefault)
                 {
-                    addr.IsDefault = false;
-                    addr.UpdatedAt = DateTime.UtcNow;
+                    var existingDefaults = await _context.Addresses
+                        .Where(a => a.FkUserId == request.FkUserId && a.AddressType == request.AddressType && a.IsDefault)
+                        .ToListAsync();
+
+                    foreach (var addr in existingDefaults)
+                    {
+                        addr.IsDefault = false;
+                        addr.UpdatedAt = DateTime.UtcNow;
+                    }
                 }
             }
 
-            request.CreatedAt = DateTime.UtcNow;
-            request.UpdatedAt = DateTime.UtcNow;
+            var address = new Address
+            {
+                FkUserId = request.FkUserId,
+                RecipientName = request.RecipientName,
+                Phone = request.Phone,
+                Line1 = request.Line1,
+                Line2 = request.Line2,
+                Barangay = request.Barangay,
+                City = request.City,
+                Province = request.Province,
+                PostalCode = request.PostalCode,
+                Country = request.Country,
+                IsDefault = request.IsDefault,
+                AddressType = request.AddressType,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-            _context.Addresses.Add(request);
+            _context.Addresses.Add(address);
             await _context.SaveChangesAsync();
 
-            return Ok(request);
+            return Ok(address);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"=== CREATE ADDRESS CRASH ===\n{ex}");
-            return StatusCode(500, new { error = "InternalServerError", message = ex.Message, stackTrace = ex.ToString() });
+            return StatusCode(500, new { error = "InternalServerError", message = ex.Message });
         }
     }
 
@@ -86,7 +111,8 @@ public class AddressController : ControllerBase
             var address = await _context.Addresses.FindAsync(addressId);
             if (address == null) return NotFound(new { error = "AddressNotFound", message = "Address not found." });
 
-            _context.Addresses.Remove(address);
+            address.ArchivedAt = DateTime.UtcNow;
+            address.IsDefault = false;
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Address deleted successfully." });

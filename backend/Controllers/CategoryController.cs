@@ -1,3 +1,6 @@
+using backend.DTO;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -58,7 +61,8 @@ public class CategoryController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateCategory([FromBody] Category request)
+    [Authorize(Roles = "Admin,Staff")]
+    public async Task<IActionResult> CreateCategory([FromBody] CategoryRequest request)
     {
         try
         {
@@ -69,16 +73,21 @@ public class CategoryController : ControllerBase
                 return BadRequest(new { error = "InvalidCategoryName", message = "Category name is required." });
 
             if (string.IsNullOrWhiteSpace(request.Slug))
-                request.Slug = request.CategoryName.Trim();
+                request.Slug = Regex.Replace(request.CategoryName.Trim().ToLowerInvariant(), @"[^\p{L}\p{N}]+", "-").Trim('-');
 
             var exists = await _context.Categories.AnyAsync(c => c.Slug == request.Slug || c.CategoryName == request.CategoryName);
             if (exists)
                 return Conflict(new { error = "CategoryExists", message = "A category with the same name or slug already exists." });
 
-            _context.Categories.Add(request);
+            var category = new Category
+            {
+                CategoryName = request.CategoryName, Slug = request.Slug!, Description = request.Description,
+                IsActive = request.IsActive, FkParentCategoryId = request.FkParentCategoryId
+            };
+            _context.Categories.Add(category);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetCategoryById), new { id = request.PkCategoryId }, request);
+            return CreatedAtAction(nameof(GetCategoryById), new { id = category.PkCategoryId }, category);
         }
         catch (Exception ex)
         {
@@ -88,7 +97,8 @@ public class CategoryController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateCategory(string id, [FromBody] Category request)
+    [Authorize(Roles = "Admin,Staff")]
+    public async Task<IActionResult> UpdateCategory(string id, [FromBody] CategoryRequest request)
     {
         try
         {
@@ -102,8 +112,9 @@ public class CategoryController : ControllerBase
             if (category == null)
                 return NotFound(new { error = "CategoryNotFound", message = $"Category with ID '{id}' was not found." });
 
-            category.CategoryName = request.CategoryName;
-            category.Slug = string.IsNullOrWhiteSpace(request.Slug) ? request.CategoryName.Trim() : request.Slug;
+            if (string.IsNullOrWhiteSpace(request.CategoryName)) return BadRequest(new { message = "Name is required." });
+            category.CategoryName = request.CategoryName.Trim();
+            category.Slug = string.IsNullOrWhiteSpace(request.Slug) ? Regex.Replace(request.CategoryName.Trim().ToLowerInvariant(), @"[^\p{L}\p{N}]+", "-").Trim('-') : request.Slug;
             category.Description = request.Description;
             category.IsActive = request.IsActive;
             category.FkParentCategoryId = request.FkParentCategoryId;
@@ -119,6 +130,7 @@ public class CategoryController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> DeleteCategory(string id)
     {
         try

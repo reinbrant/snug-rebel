@@ -18,8 +18,10 @@ export type ProductVariantItem = {
   sku: string
   size: string
   color: string
+  sizeId: number | null
+  colorId: number | null
   stock: number
-  priceOverride?: number
+  priceOverride?: number | null
   isActive: boolean
 }
 
@@ -50,6 +52,9 @@ export type ProductItem = {
   status: 'Active' | 'Low stock' | 'Draft' | 'Inactive'
   sku: string
   variants: ProductVariantItem[]
+  hasSizes: boolean
+  hasColors: boolean
+  images: Array<{ url: string; altText?: string }>
   models3D?: Product3DModelItem[]
 }
 
@@ -72,6 +77,7 @@ export type CollectionItem = {
 export type OrderStatus = 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Refunded'
 
 export type OrderItem = {
+  orderId?: string
   id: string
   customer: string
   total: number

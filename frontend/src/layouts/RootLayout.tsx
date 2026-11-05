@@ -1,11 +1,13 @@
 import { createSearchParams, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
-import NavBar from '../components/nav/NavBar.tsx'
+import NavBar, { type Utility } from '../components/nav/NavBar.tsx'
+import CartDrawer from '../components/shop/CartDrawer.tsx'
+import { useCart } from '../context/cartContext.ts'
 import { pageFromPath, ROUTES } from '../routes.ts'
 
-/** Wraps every page: the nav bar on top, the current page below it. Connects the nav to the router. */
 export default function RootLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const { isOpen, openCart, closeCart, itemCount } = useCart()
 
   const goToShop = (filter: string | null) =>
     navigate({
@@ -13,15 +15,24 @@ export default function RootLayout() {
       search: filter ? `?${createSearchParams({ filter }).toString()}` : '',
     })
 
+  const handleUtilityChange = (utility: Utility | null) => {
+    if (utility === 'cart') openCart()
+    else closeCart()
+  }
+
   return (
     <>
       <NavBar
         page={pageFromPath(pathname)}
         onNavigate={(page) => navigate(ROUTES[page])}
         onShopFilter={goToShop}
+        onUtilityChange={handleUtilityChange}
+        cartOpen={isOpen}
+        cartCount={itemCount}
       />
 
-      {/* the bar is fixed, so push the page down by its height */}
+      <CartDrawer />
+
       <main className="pt-(--nav-h)">
         <Outlet />
         <ScrollRestoration />

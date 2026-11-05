@@ -29,11 +29,13 @@ public partial class Address
     public string Country { get; set; } = null!;
 
     public bool IsDefault { get; set; }
-
+    
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
-
+    
+    public DateTime? ArchivedAt { get; set; }
+    
     [JsonIgnore]
     public virtual User? FkUser { get; set; }
 

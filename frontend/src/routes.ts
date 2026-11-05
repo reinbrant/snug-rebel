@@ -2,7 +2,8 @@ export const ROUTES = {
   home: '/',
   shop: '/shop',
   about: '/about',
-  orders: '/orders',
+  tracking: '/tracking',
+  checkout: '/checkout'
 } as const
 
 export type Page = keyof typeof ROUTES
@@ -12,7 +13,7 @@ export const NAV_LINKS: { page: Page; label: string }[] = [
   { page: 'home', label: 'Home' },
   { page: 'shop', label: 'Shop' },
   { page: 'about', label: 'About' },
-  { page: 'orders', label: 'Orders' },
+  { page: 'tracking', label: 'Tracking' }
 ]
 
 /** Router path pattern for the item page (relative to the root layout). */
