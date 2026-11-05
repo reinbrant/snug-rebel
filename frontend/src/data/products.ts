@@ -15,7 +15,7 @@ export type Product = {
     soldCount: number
     stockLeft?: number
     badge?: ItemBadgeVariant
-    categories: Category[]
+    categories: string[]
     defaultVariantId?: string
 }
 
@@ -41,6 +41,24 @@ const PLACEHOLDER =
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#7a7a7a"/></svg>',
     )
 
+const API_ORIGIN = ((import.meta.env.VITE_API_URL as string | undefined) ?? '')
+    .replace(/\/api\/?$/i, '')
+    .replace(/\/$/, '')
+
+export function resolveAssetUrl(url: string | undefined | null): string {
+    if (!url) return PLACEHOLDER
+    const trimmed = url.trim()
+    if (
+        !trimmed ||
+        /^(https?:)?\/\//i.test(trimmed) ||
+        trimmed.startsWith('data:') ||
+        trimmed.startsWith('blob:')
+    ) {
+        return trimmed || PLACEHOLDER
+    }
+    return `${API_ORIGIN}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`
+}
+
 const base = { imageSrc: PLACEHOLDER, rating: 5, reviewCount: 10, soldCount: 20 }
 
 export const MOCK_PRODUCTS: Product[] = [
@@ -54,9 +72,75 @@ export const MOCK_PRODUCTS: Product[] = [
     { ...base, id: 'p8', name: 'Rebel Chain Beanie', price: 250, badge: 'lowStock', stockLeft: 5, categories: ['accessories'], defaultVariantId: 'var_p8_Blood red_S' },
 ]
 
+interface BackendCategory {
+    pkCategoryId: string
+    categoryName: string
+    slug: string
+}
+
+interface Backend3DModel {
+    id: string
+    productId: string
+    modelUrl: string
+    previewImageUrl?: string | null
+    isActive: boolean
+}
+
+const isPlaceholderImage = (src?: string | null) =>
+    !src || src.startsWith('data:image/svg+xml')
+
 export async function getProducts(): Promise<Product[]> {
-    if (import.meta.env.VITE_USE_MOCK_API !== 'false') {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         return MOCK_PRODUCTS
     }
-    return apiFetch<Product[]>('/Product/ProductList')
+
+    const [rawProducts, rawCategories] = await Promise.all([
+        apiFetch<Product[]>('/Product/ProductList'),
+        apiFetch<BackendCategory[]>('/Category').catch(() => [] as BackendCategory[]),
+    ])
+
+    // Map category IDs (ctg-...) and names to normalized lowercase slugs (tops, bottoms, etc.)
+    const categoryMap = new Map<string, string>()
+    for (const c of rawCategories) {
+        const slug = (c.slug || c.categoryName || '').trim().toLowerCase()
+        if (c.pkCategoryId) categoryMap.set(c.pkCategoryId.toLowerCase(), slug)
+        if (c.categoryName) categoryMap.set(c.categoryName.trim().toLowerCase(), slug)
+        if (c.slug) categoryMap.set(c.slug.trim().toLowerCase(), slug)
+    }
+
+    const enriched = await Promise.all(
+        rawProducts.map(async (p) => {
+            const normalizedCategories = new Set<string>()
+            for (const rawCat of p.categories ?? []) {
+                const key = String(rawCat).trim().toLowerCase()
+                const mapped = categoryMap.get(key)
+                if (mapped) normalizedCategories.add(mapped)
+                normalizedCategories.add(key)
+            }
+
+            if ((p.soldCount ?? 0) > 0) {
+                normalizedCategories.add('best-selling')
+            }
+
+            let imageSrc = p.imageSrc
+            // If ProductList returned the fallback gray SVG, check if there's a previewImageUrl in Product3DModel
+            if (isPlaceholderImage(imageSrc)) {
+                const models = await apiFetch<Backend3DModel[]>(
+                    `/Product3DModel/product/${encodeURIComponent(p.id)}`,
+                ).catch(() => [] as Backend3DModel[])
+                const activePreview = models.find((m) => m.isActive && m.previewImageUrl)?.previewImageUrl
+                if (activePreview) {
+                    imageSrc = activePreview
+                }
+            }
+
+            return {
+                ...p,
+                imageSrc: resolveAssetUrl(imageSrc),
+                categories: Array.from(normalizedCategories),
+            }
+        }),
+    )
+
+    return enriched
 }

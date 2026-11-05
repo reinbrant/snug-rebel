@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { createElement, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { Box, Image as ImageIcon } from "lucide-react";
 import type { ItemDetail as Item, Review } from "../api/items";
 import { useCart } from "../context/cartContext";
 import AngledButton from "../components/ui/AngledButton";
@@ -16,6 +17,12 @@ import type { CartLine } from "../api/cart";
 
 const fieldLabel =
 	"font-display text-[1.75rem] font-bold leading-none [font-stretch:62%]";
+
+const FALLBACK_DETAIL_IMAGE =
+	"data:image/svg+xml," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" width="710" height="981"><rect width="710" height="981" fill="#7a7a7a"/></svg>',
+	);
 
 /** Full view of one item: /shop/:itemId */
 export default function ItemDetail() {
@@ -49,7 +56,7 @@ export default function ItemDetail() {
 		);
 	}
 
-	// key resets the picked color / size / quantity when you move to a different item
+	// key resets the picked color / size / quantity / viewMode when you move to a different item
 	return (
 		<ItemDetailView
 			key={state.item.id}
@@ -65,6 +72,10 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 		item.sizes.find((s) => s.available)?.label ?? "",
 	);
 	const [quantity, setQuantity] = useState(1);
+	const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+	const [imgSrc, setImgSrc] = useState(
+		item.imageSrc?.trim() ? item.imageSrc : FALLBACK_DETAIL_IMAGE,
+	);
 
 	const navigate = useNavigate();
 
@@ -87,7 +98,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 			variantId: `var_${item.id}_${size}`,
 			productId: item.id,
 			name: item.name,
-			imageUrl: item.imageSrc,
+			imageUrl: imgSrc,
 			unitPrice: item.salePrice ?? item.price,
 			color: color || item.colors?.[0]?.name || "Standard",
 			size: size,
@@ -100,17 +111,94 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 
 	return (
 		<div className="bg-white">
-			{/* First screen: everything down to the buttons. The reviews start below the fold. */}
 			<section className="flex min-h-[calc(100svh-var(--nav-h))] items-center px-6 py-8 md:px-14">
 				<div className="grid w-full gap-8 lg:grid-cols-[auto_1fr] lg:gap-14">
-					<div className="mx-auto aspect-[710/981] w-full max-w-md overflow-hidden border-4 border-brand-red-dark bg-neutral-300 lg:mx-0 lg:w-[min(45vw,calc((100svh_-_var(--nav-h)_-_4rem)*0.7238))] lg:max-w-none">
-						<img
-							src={item.imageSrc}
-							alt={item.name}
-							className="size-full object-cover"
-						/>
+					<div className="mx-auto w-full max-w-md lg:mx-0 lg:w-[min(45vw,calc((100svh_-_var(--nav-h)_-_4rem)*0.7238))] lg:max-w-none">
+						{/* Media Frame (Strict Aspect Ratio) */}
+						<div className="relative aspect-[710/981] w-full overflow-hidden border-4 border-brand-red-dark bg-neutral-300">
+							{/* Content Container */}
+							{viewMode === "2d" ? (
+								<img
+									src={imgSrc}
+									alt={item.name}
+									onError={() =>
+										setImgSrc(FALLBACK_DETAIL_IMAGE)
+									}
+									className="absolute inset-0 size-full object-cover"
+								/>
+							) : item.modelUrl ? (
+								<div className="absolute inset-0 bg-neutral-900 text-white">
+									{createElement("model-viewer", {
+										src: item.modelUrl,
+										poster: imgSrc,
+										alt: `${item.name} 3D model`,
+										"camera-controls": true,
+										"auto-rotate": true,
+										"shadow-intensity": "1",
+										style: {
+											width: "100%",
+											height: "100%",
+											backgroundColor: "#171717",
+										},
+									})}
+								</div>
+							) : (
+								<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+									<Box
+										size={40}
+										className="text-neutral-600"
+									/>
+									<p className="font-display text-lg font-extrabold uppercase [font-stretch:115%]">
+										No 3D (.glb) model uploaded for this
+										product yet.
+									</p>
+									<PillButton
+										onClick={() => setViewMode("2d")}
+									>
+										Back to 2D Image
+									</PillButton>
+								</div>
+							)}
+
+							{/* 2D / 3D Toggle Capsule (Absolute Bottom Right) */}
+							<div
+								role="group"
+								aria-label="Toggle 2D or 3D product view"
+								className="absolute bottom-4 right-4 z-10 inline-flex border-2 border-black bg-neutral-100 p-0.5 shadow-md"
+							>
+								<button
+									type="button"
+									aria-pressed={viewMode === "2d"}
+									onClick={() => setViewMode("2d")}
+									className={[
+										"inline-flex cursor-pointer items-center gap-1.5 px-3 py-1.5 font-display text-xs font-extrabold uppercase tracking-tight transition-colors [font-stretch:125%]",
+										viewMode === "2d"
+											? "bg-black text-white"
+											: "bg-transparent text-black hover:bg-neutral-300",
+									].join(" ")}
+								>
+									<ImageIcon size={14} aria-hidden="true" />
+									2D
+								</button>
+								<button
+									type="button"
+									aria-pressed={viewMode === "3d"}
+									onClick={() => setViewMode("3d")}
+									className={[
+										"inline-flex cursor-pointer items-center gap-1.5 px-3 py-1.5 font-display text-xs font-extrabold uppercase tracking-tight transition-colors [font-stretch:125%]",
+										viewMode === "3d"
+											? "bg-brand-red text-white"
+											: "bg-transparent text-black hover:bg-neutral-300",
+									].join(" ")}
+								>
+									<Box size={14} aria-hidden="true" />
+									3D
+								</button>
+							</div>
+						</div>
 					</div>
 
+					{/* Product Info Section (Unchanged) */}
 					<div className="flex min-w-0 flex-col justify-center gap-5">
 						<div>
 							<h1 className="font-display text-[clamp(2rem,3.6vw,4.25rem)] font-black leading-[1.1] tracking-tight [font-stretch:125%]">

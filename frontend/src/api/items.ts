@@ -1,5 +1,5 @@
 import { apiFetch } from './api'
-import { MOCK_PRODUCTS } from '../data/products'
+import { MOCK_PRODUCTS, resolveAssetUrl } from '../data/products'
 
 export type ItemColor = { name: string; hex: string }
 export type ItemSize = { label: string; available: boolean }
@@ -11,11 +11,25 @@ export type ItemVariant = {
     priceOverride?: number
 }
 
+export type Product3DModelDTO = {
+    id: string
+    productId: string
+    modelUrl: string
+    previewImageUrl?: string | null
+    modelName?: string | null
+    fileSizeBytes: number
+    isActive: boolean
+    createdAt: string
+    updatedAt: string
+}
+
 export type ItemDetail = {
     id: string
     name: string
     description: string
     imageSrc: string
+    modelUrl?: string | null
+    modelName?: string | null
     price: number
     salePrice?: number
     rating: number
@@ -72,6 +86,7 @@ function buildMockItemDetail(id: string): ItemDetail | null {
         name: product.name,
         description: DEFAULT_DETAILS.description,
         imageSrc: product.imageSrc,
+        modelUrl: null,
         price: product.price,
         salePrice: product.salePrice,
         rating: product.rating,
@@ -84,7 +99,6 @@ function buildMockItemDetail(id: string): ItemDetail | null {
     }
 }
 
-// Mock-mode only: finds the mock variant for a product + size (first size if none given)
 export function findMockVariantBySize(
     productId: string,
     size?: string | null,
@@ -97,7 +111,6 @@ export function findMockVariantBySize(
     return variant ? { item, variant } : null
 }
 
-// Used by cart.mock.ts to hydrate stored variant IDs into full cart line items
 export async function findMockVariant(
     variantId: string,
 ): Promise<{ item: ItemDetail; variant: ItemVariant } | null> {
@@ -107,7 +120,6 @@ export async function findMockVariant(
         const variant = detail.variants?.find((v) => v.id === variantId)
         if (variant) return { item: detail, variant }
     }
-    // Fallback if a raw product ID was passed
     const fallbackItem = buildMockItemDetail(variantId)
     if (fallbackItem && fallbackItem.variants?.[0]) {
         return { item: fallbackItem, variant: fallbackItem.variants[0] }
@@ -136,13 +148,38 @@ const MOCK_REVIEWS: Review[] = [
 
 const simulateNetwork = () => new Promise((resolve) => setTimeout(resolve, 150))
 
+const isPlaceholderImage = (src?: string | null) =>
+    !src || src.startsWith('data:image/svg+xml')
+
 export async function getItem(id: string): Promise<ItemDetail | null> {
-    if (import.meta.env.VITE_USE_MOCK_API !== 'false') {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         await simulateNetwork()
         return buildMockItemDetail(id)
     }
     try {
-        return await apiFetch<ItemDetail>(`/Product/GetProductByID/${encodeURIComponent(id)}`)
+        const [detail, models] = await Promise.all([
+            apiFetch<ItemDetail>(`/Product/GetProductByID/${encodeURIComponent(id)}`),
+            apiFetch<Product3DModelDTO[]>(
+                `/Product3DModel/product/${encodeURIComponent(id)}`,
+            ).catch(() => [] as Product3DModelDTO[]),
+        ])
+
+        if (!detail) return null
+
+        const activeModel = models.find((m) => m.isActive) ?? models[0]
+        const rawImage =
+            !isPlaceholderImage(detail.imageSrc)
+                ? detail.imageSrc
+                : activeModel?.previewImageUrl || detail.imageSrc
+
+        const rawModelUrl = detail.modelUrl || activeModel?.modelUrl || null
+
+        return {
+            ...detail,
+            imageSrc: resolveAssetUrl(rawImage),
+            modelUrl: rawModelUrl ? resolveAssetUrl(rawModelUrl) : null,
+            modelName: activeModel?.modelName ?? detail.name,
+        }
     } catch (error) {
         if (error instanceof Error && error.message.includes('404')) {
             return null
@@ -151,8 +188,31 @@ export async function getItem(id: string): Promise<ItemDetail | null> {
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function getItemReviews(_id: string): Promise<Review[]> {
-    await simulateNetwork()
-    return MOCK_REVIEWS
+export async function getItemReviews(id: string): Promise<Review[]> {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
+        await simulateNetwork()
+        return MOCK_REVIEWS
+    }
+    try {
+        const raw = await apiFetch<
+            Array<{
+                pkReviewId: string
+                userDisplayName?: string
+                rating: number
+                body?: string
+                createdAt: string
+            }>
+        >(`/Review/product/${encodeURIComponent(id)}`)
+        if (!Array.isArray(raw) || raw.length === 0) return MOCK_REVIEWS
+        return raw.map((r) => ({
+            id: r.pkReviewId,
+            author: r.userDisplayName?.trim() || 'Verified Buyer',
+            rating: r.rating,
+            body: r.body ?? '',
+            postedAt: r.createdAt ? r.createdAt.slice(0, 10) : '',
+            verified: true,
+        }))
+    } catch {
+        return MOCK_REVIEWS
+    }
 }

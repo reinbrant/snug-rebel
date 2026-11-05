@@ -40,26 +40,59 @@ public class ProductController : ControllerBase
     {
         try
         {
-            var products = await _context.Products
+            // 1. Fetch raw data from the DB without complex ?? operators to avoid EF translation crashes
+            var rawProducts = await _context.Products
+                .AsNoTracking()
                 .Where(p => p.IsActive)
-                .Select(p => new ProductListDTO
+                .Select(p => new
                 {
-                    Id = p.PkProductId,
-                    Name = p.ProductName ?? string.Empty,
-                    Price = p.BasePrice,
-                    SalePrice = null,
-                    Rating = 5,
-                    ReviewCount = 0,
-                    SoldCount = 0,
-                    StockLeft = null,
-                    Badge = null,
-                    ImageSrc = p.ProductImages
-                        .Where(img => img.IsPrimary)
+                    p.PkProductId,
+                    p.ProductName,
+                    p.BasePrice,
+                    p.AvgRating,
+                    p.ReviewCount,
+                    p.SoldCount,
+                    StockLeft = p.ProductVariants.Any(v => v.IsActive)
+                        ? p.ProductVariants.Where(v => v.IsActive).Sum(v => (int?)v.StockQuantity)
+                        : null,
+                    PrimaryImage = p.ProductImages
+                        .OrderByDescending(img => img.IsPrimary)
+                        .ThenBy(img => img.SortOrder)
                         .Select(img => img.Url)
-                        .FirstOrDefault() ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><rect width='400' height='400' fill='%237a7a7a'/></svg>",
-                    Categories = p.FkCategoryId != null ? new List<string> { p.FkCategoryId } : new List<string>()
+                        .FirstOrDefault(),
+                    ModelPreview = p.Product3DModels
+                        .Where(m => m.IsActive && m.PreviewImageUrl != null && m.PreviewImageUrl != "")
+                        .OrderByDescending(m => m.CreatedAt)
+                        .Select(m => m.PreviewImageUrl)
+                        .FirstOrDefault(),
+                    CategorySlug = p.FkCategory != null ? p.FkCategory.Slug : null,
+                    CategoryName = p.FkCategory != null ? p.FkCategory.CategoryName : null,
+                    CategoryId = p.FkCategoryId
                 })
                 .ToListAsync();
+
+            // 2. Perform the fallback mapping safely in memory
+            var products = rawProducts.Select(p => new ProductListDTO
+            {
+                Id = p.PkProductId,
+                Name = p.ProductName ?? string.Empty,
+                Price = p.BasePrice,
+                SalePrice = null,
+                Rating = p.ReviewCount > 0 ? (double)p.AvgRating : 5.0,
+                ReviewCount = p.ReviewCount,
+                SoldCount = p.SoldCount,
+                StockLeft = p.StockLeft,
+                Badge = null,
+                ImageSrc = p.PrimaryImage
+                    ?? p.ModelPreview
+                    ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><rect width='400' height='400' fill='%237a7a7a'/></svg>",
+                Categories = new List<string>
+                {
+                    p.CategorySlug?.ToLower() ?? "",
+                    p.CategoryName?.ToLower() ?? "",
+                    p.CategoryId ?? ""
+                }.Where(s => !string.IsNullOrEmpty(s)).ToList()
+            }).ToList();
 
             return Ok(products);
         }
@@ -76,6 +109,7 @@ public class ProductController : ControllerBase
         {
             var product = await _context.Products
                 .Include(p => p.ProductImages)
+                .Include(p => p.Product3DModels)
                 .Include(p => p.ProductVariants).ThenInclude(v => v.FkColor)
                 .Include(p => p.ProductVariants).ThenInclude(v => v.FkSize)
                 .FirstOrDefaultAsync(p => p.PkProductId == id);
@@ -84,8 +118,6 @@ public class ProductController : ControllerBase
 
             var activeVariants = product.ProductVariants.Where(v => v.IsActive).ToList();
 
-            // Sizes are variants. Variant rows are created the first time a size is added to a cart,
-            // so always offer the standard sizes, and mark one unavailable only if its row exists with 0 stock.
             var standardSizes = new[] { "S", "M", "L", "XL" };
             var bySize = activeVariants
                 .GroupBy(v => v.FkSize.Label.ToUpper())
@@ -108,6 +140,19 @@ public class ProductController : ControllerBase
                     .ToList()
                 : new List<ColorDTO> { new ColorDTO("Standard", "#000000") };
 
+            var active3DModel = product.Product3DModels?
+                .Where(m => m.IsActive)
+                .OrderByDescending(m => m.CreatedAt)
+                .FirstOrDefault();
+
+            var thumbnailUrl = product.ProductImages?
+                .OrderByDescending(img => img.IsPrimary)
+                .ThenBy(img => img.SortOrder)
+                .Select(img => img.Url)
+                .FirstOrDefault()
+                ?? active3DModel?.PreviewImageUrl
+                ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='710' height='981'><rect width='710' height='981' fill='%237a7a7a'/></svg>";
+
             var detail = new ProductDetailDTO
             {
                 Id = product.PkProductId,
@@ -115,12 +160,11 @@ public class ProductController : ControllerBase
                 Description = product.Description ?? string.Empty,
                 Price = product.BasePrice,
                 SalePrice = null,
-                Rating = 5.0,
-                ReviewCount = 0,
-                SoldCount = 0,
-                ImageSrc = product.ProductImages?.FirstOrDefault(img => img.IsPrimary)?.Url
-                            ?? product.ProductImages?.FirstOrDefault()?.Url
-                            ?? "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='710' height='981'><rect width='710' height='981' fill='%237a7a7a'/></svg>",
+                Rating = product.ReviewCount > 0 ? (double)product.AvgRating : 5.0,
+                ReviewCount = product.ReviewCount,
+                SoldCount = product.SoldCount,
+                ImageSrc = thumbnailUrl,
+                ModelUrl = active3DModel?.ModelUrl,
                 Stock = activeVariants.Any() ? activeVariants.Sum(v => v.StockQuantity) : 10,
                 Colors = colors,
                 Sizes = sizes
