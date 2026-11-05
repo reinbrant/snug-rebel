@@ -2,7 +2,6 @@ import { Link } from "react-router";
 import { ROUTES } from "../routes";
 import snugrebel_logo_white from "../assets/snugrebel_logo_white.svg";
 import landpage_bg from "../assets/landpage_bg.png";
-
 export default function LandingPage() {
 	return (
 		<div className="bg-black w-full overflow-x-hidden">
