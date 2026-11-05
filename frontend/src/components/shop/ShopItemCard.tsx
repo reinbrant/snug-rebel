@@ -56,8 +56,16 @@ export default function ShopItemCard({
 	const discountPercent = isOnSale
 		? Math.round(((price - salePrice) / price) * 100)
 		: 0;
-	const badgeVariant: ItemBadgeVariant =
-		badge ?? (isOnSale ? "sale" : "none");
+	let badgeVariant: ItemBadgeVariant = "none";
+	if (stockLeft !== undefined && stockLeft <= 0) {
+		badgeVariant = "outOfStock";
+	} else if (badge) {
+		badgeVariant = badge; // prioritizes 'new' if passed from parent
+	} else if (isOnSale) {
+		badgeVariant = "sale";
+	} else if (stockLeft !== undefined && stockLeft < 15) {
+		badgeVariant = "lowStock";
+	}
 	const isUnavailable = badgeVariant === "outOfStock";
 	const showStockTag = badgeVariant === "lowStock" && stockLeft !== undefined;
 

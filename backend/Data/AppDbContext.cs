@@ -568,6 +568,12 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.BasePrice)
                 .HasPrecision(10, 2)
                 .HasColumnName("base_price");
+            entity.Property(e => e.SalePrice)
+                .HasPrecision(10, 2)
+                .HasColumnName("sale_price");
+            entity.Property(e => e.Badge)
+                .HasMaxLength(50)
+                .HasColumnName("badge");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -606,13 +612,6 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.SoldCount)
                 .HasDefaultValue(0)
                 .HasColumnName("sold_count");
-            entity.Property(e => e.SalePrice)
-                .HasPrecision(10, 2)
-                .HasColumnName("sale_price");
-
-            entity.Property(e => e.Badge)
-                .HasMaxLength(50)
-                .HasColumnName("badge");
 
             entity.HasOne(d => d.FkCategory).WithMany(p => p.Products)
                 .HasForeignKey(d => d.FkCategoryId)
