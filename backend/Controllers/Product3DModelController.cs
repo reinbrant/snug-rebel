@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using backend.DTO;
@@ -81,6 +82,9 @@ public class Product3DModelController : ControllerBase
     }
 
     [HttpPost("upload")]
+    [Authorize(Roles = "Admin,Staff")]
+    [RequestSizeLimit(60 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 60 * 1024 * 1024)]
     public async Task<IActionResult> Upload3DModel()
     {
         try
@@ -95,6 +99,11 @@ public class Product3DModelController : ControllerBase
                 return BadRequest(new { error = "Missing required fields: productId, modelFile" });
             }
 
+            if (Path.GetExtension(modelFile.FileName).ToLowerInvariant() != ".glb" || modelFile.Length == 0 || modelFile.Length > 50 * 1024 * 1024)
+                return BadRequest(new { message = "Select a .glb model up to 50 MB." });
+            if (modelName.Length > 255) return BadRequest(new { message = "Model name must be at most 255 characters." });
+            if (previewFile != null && !ProductImageController.IsValidImage(previewFile))
+                return BadRequest(new { message = "Select a JPEG, PNG, GIF or WebP preview up to 5 MB." });
             var product = await _context.Products.FindAsync(productId);
             if (product == null)
             {
@@ -139,6 +148,13 @@ public class Product3DModelController : ControllerBase
                 UpdatedAt = DateTime.UtcNow
             };
 
+            if (model3D.PreviewImageUrl != null && !await _context.ProductImages.AnyAsync(i => i.FkProductId == model3D.FkProductId && i.Url == model3D.PreviewImageUrl))
+                _context.ProductImages.Add(new ProductImage
+                {
+                    FkProductId = model3D.FkProductId, Url = model3D.PreviewImageUrl, AltText = model3D.ModelName,
+                    IsPrimary = !await _context.ProductImages.AnyAsync(i => i.FkProductId == model3D.FkProductId && i.IsPrimary),
+                    SortOrder = await _context.ProductImages.CountAsync(i => i.FkProductId == model3D.FkProductId)
+                });
             _context.Product3DModels.Add(model3D);
             await _context.SaveChangesAsync();
 
@@ -165,6 +181,7 @@ public class Product3DModelController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> Create3DModel([FromBody] CreateProduct3DModelRequest request)
     {
         try
@@ -187,6 +204,13 @@ public class Product3DModelController : ControllerBase
                 UpdatedAt = DateTime.UtcNow
             };
 
+            if (model3D.PreviewImageUrl != null && !await _context.ProductImages.AnyAsync(i => i.FkProductId == model3D.FkProductId && i.Url == model3D.PreviewImageUrl))
+                _context.ProductImages.Add(new ProductImage
+                {
+                    FkProductId = model3D.FkProductId, Url = model3D.PreviewImageUrl, AltText = model3D.ModelName,
+                    IsPrimary = !await _context.ProductImages.AnyAsync(i => i.FkProductId == model3D.FkProductId && i.IsPrimary),
+                    SortOrder = await _context.ProductImages.CountAsync(i => i.FkProductId == model3D.FkProductId)
+                });
             _context.Product3DModels.Add(model3D);
             await _context.SaveChangesAsync();
 
@@ -219,6 +243,7 @@ public class Product3DModelController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> Update3DModel(string id, [FromBody] Product3DModelDTO request)
     {
         try
@@ -242,6 +267,7 @@ public class Product3DModelController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> Delete3DModel(string id)
     {
         try

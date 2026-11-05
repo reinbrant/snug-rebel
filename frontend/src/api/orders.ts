@@ -37,7 +37,7 @@ export interface OrderTracking {
 }
 
 // Same switch the items, products and checkout modules use.
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_API !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "true";
 
 const ORDER_STATUSES: OrderStatusName[] = [
     "Pending",

@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './api'
+import { ApiError, apiFetch, resolveAssetUrl } from './api'
 import { EMPTY_CART, type Cart, type CartOwner, type CartTarget, type VariantChange } from './cart.types'
 
 type CartItemDTO = {
@@ -27,7 +27,7 @@ const toCart = (dto: CartDTO): Cart => ({
         variantId: i.fkProductVariantId,
         productId: i.productId ?? '',
         name: i.productName ?? 'Item',
-        imageUrl: i.imageUrl ?? null,
+        imageUrl: resolveAssetUrl(i.imageUrl) || null,
         unitPrice: i.unitPrice ?? 0,
         color: i.colorName ?? null,
         size: i.sizeLabel ?? null,
@@ -53,7 +53,7 @@ export async function fetchCart(owner: CartOwner): Promise<Cart> {
 export async function addToCart(owner: CartOwner, target: CartTarget, quantity = 1): Promise<Cart> {
     const dto = await apiFetch<CartDTO>('/Cart/add', {
         method: 'POST',
-        body: JSON.stringify({ ...owner, productId: target.productId, size: target.size ?? null, quantity }),
+        body: JSON.stringify({ ...owner, productId: target.productId, size: target.size ?? null, color: target.color ?? null, productVariantId: target.productVariantId, quantity }),
     })
     return toCart(dto)
 }

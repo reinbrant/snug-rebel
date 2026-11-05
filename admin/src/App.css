@@ -1125,3 +1125,7 @@ textarea:focus {
     align-items: flex-start;
   }
 }
+
+.product-images { display: flex; flex-wrap: wrap; gap: 1rem; }
+.product-image-entry { display: flex; flex-direction: column; gap: .5rem; max-width: 200px; }
+.product-image-entry img, .product-detail-image { width: 160px; height: 160px; object-fit: cover; border-radius: 8px; }

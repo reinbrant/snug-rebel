@@ -1,5 +1,5 @@
 import type { ItemBadgeVariant } from '../components/shop/ItemCardBadge'
-import { apiFetch } from '../api/api'
+import { apiFetch, resolveAssetUrl } from '../api/api'
 
 export type Category = 'tops' | 'bottoms' | 'outerwear' | 'best-selling' | 'accessories'
 export type SortKey = 'best-selling' | 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc'
@@ -55,8 +55,8 @@ export const MOCK_PRODUCTS: Product[] = [
 ]
 
 export async function getProducts(): Promise<Product[]> {
-    if (import.meta.env.VITE_USE_MOCK_API !== 'false') {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         return MOCK_PRODUCTS
     }
-    return apiFetch<Product[]>('/Product/ProductList')
+    return (await apiFetch<Product[]>('/Product/ProductList')).map(p => ({ ...p, imageSrc: resolveAssetUrl(p.imageSrc) }))
 }

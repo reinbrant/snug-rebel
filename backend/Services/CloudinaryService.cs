@@ -7,12 +7,17 @@ namespace backend.Services;
 
 public class CloudinaryService
 {
-    private readonly Cloudinary _cloudinary;
+    private readonly Cloudinary? _cloudinary;
+    private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
 
-    public CloudinaryService(IConfiguration configuration)
+    public CloudinaryService(IConfiguration configuration, IWebHostEnvironment environment)
     {
         _configuration = configuration;
+        _environment = environment;
+        if (string.IsNullOrWhiteSpace(configuration["Cloudinary:CloudName"]) ||
+            string.IsNullOrWhiteSpace(configuration["Cloudinary:ApiKey"]) ||
+            string.IsNullOrWhiteSpace(configuration["Cloudinary:ApiSecret"])) return;
         var account = new Account(
             _configuration["Cloudinary:CloudName"],
             _configuration["Cloudinary:ApiKey"],
@@ -25,6 +30,7 @@ public class CloudinaryService
     {
         try
         {
+            if (_cloudinary == null) return await StoreLocal(fileStream, fileName, "models");
             var uploadParams = new RawUploadParams()
             {
                 File = new FileDescription(fileName, fileStream),
@@ -52,6 +58,7 @@ public class CloudinaryService
     {
         try
         {
+            if (_cloudinary == null) return await StoreLocal(fileStream, fileName, "images");
             var uploadParams = new ImageUploadParams()
             {
                 File = new FileDescription(fileName, fileStream),
@@ -75,10 +82,22 @@ public class CloudinaryService
         }
     }
 
+    private async Task<(string url, long fileSize)> StoreLocal(Stream stream, string fileName, string kind)
+    {
+        var root = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
+        var directory = Path.Combine(root, "uploads", kind);
+        Directory.CreateDirectory(directory);
+        var name = $"{Guid.NewGuid():N}{Path.GetExtension(fileName).ToLowerInvariant()}";
+        await using var output = File.Create(Path.Combine(directory, name));
+        await stream.CopyToAsync(output);
+        return ($"/uploads/{kind}/{name}", output.Length);
+    }
+
     public async Task<bool> DeleteFile(string publicId)
     {
         try
         {
+            if (_cloudinary == null) return false;
             var deleteParams = new DeletionParams(publicId) { ResourceType = ResourceType.Raw };
             var deleteResult = await _cloudinary.DestroyAsync(deleteParams);
             return deleteResult.Result == "ok";

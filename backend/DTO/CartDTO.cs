@@ -34,6 +34,7 @@ public class CartItemRequest
     // Preferred: ProductId + Size. A size IS the variant, the backend finds or creates the row.
     public string? ProductId { get; set; }
     public string? Size { get; set; }
+    public string? Color { get; set; }
 
     // Still accepted: an exact product_variants id (or the old "var_{product}_{color}_{size}" format)
     public string? ProductVariantId { get; set; }
@@ -48,6 +49,7 @@ public class AddToCartRequest
     // Single item payload fields
     public string? ProductId { get; set; }
     public string? Size { get; set; }
+    public string? Color { get; set; }
     public string? ProductVariantId { get; set; }
     public int? Quantity { get; set; }
 

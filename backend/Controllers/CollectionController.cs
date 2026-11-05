@@ -1,3 +1,6 @@
+using backend.DTO;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -58,7 +61,8 @@ public class CollectionController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateCollection([FromBody] Collection request)
+    [Authorize(Roles = "Admin,Staff")]
+    public async Task<IActionResult> CreateCollection([FromBody] CollectionRequest request)
     {
         try
         {
@@ -69,16 +73,21 @@ public class CollectionController : ControllerBase
                 return BadRequest(new { error = "InvalidCollectionName", message = "Collection name is required." });
 
             if (string.IsNullOrWhiteSpace(request.Slug))
-                request.Slug = request.CollectionName.Trim();
+                request.Slug = Regex.Replace(request.CollectionName.Trim().ToLowerInvariant(), @"[^\p{L}\p{N}]+", "-").Trim('-');
 
             var exists = await _context.Collections.AnyAsync(c => c.Slug == request.Slug || c.CollectionName == request.CollectionName);
             if (exists)
                 return Conflict(new { error = "CollectionExists", message = "A collection with the same name or slug already exists." });
 
-            _context.Collections.Add(request);
+            var collection = new Collection
+            {
+                CollectionName = request.CollectionName, Slug = request.Slug!, Description = request.Description,
+                IsActive = request.IsActive, BannerUrl = request.BannerUrl, LaunchDate = request.LaunchDate
+            };
+            _context.Collections.Add(collection);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetCollectionById), new { id = request.PkCollectionId }, request);
+            return CreatedAtAction(nameof(GetCollectionById), new { id = collection.PkCollectionId }, collection);
         }
         catch (Exception ex)
         {
@@ -88,7 +97,8 @@ public class CollectionController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateCollection(string id, [FromBody] Collection request)
+    [Authorize(Roles = "Admin,Staff")]
+    public async Task<IActionResult> UpdateCollection(string id, [FromBody] CollectionRequest request)
     {
         try
         {
@@ -102,8 +112,9 @@ public class CollectionController : ControllerBase
             if (collection == null)
                 return NotFound(new { error = "CollectionNotFound", message = $"Collection with ID '{id}' was not found." });
 
-            collection.CollectionName = request.CollectionName;
-            collection.Slug = string.IsNullOrWhiteSpace(request.Slug) ? request.CollectionName.Trim() : request.Slug;
+            if (string.IsNullOrWhiteSpace(request.CollectionName)) return BadRequest(new { message = "Name is required." });
+            collection.CollectionName = request.CollectionName.Trim();
+            collection.Slug = string.IsNullOrWhiteSpace(request.Slug) ? Regex.Replace(request.CollectionName.Trim().ToLowerInvariant(), @"[^\p{L}\p{N}]+", "-").Trim('-') : request.Slug;
             collection.Description = request.Description;
             collection.BannerUrl = request.BannerUrl;
             collection.IsActive = request.IsActive;
@@ -120,6 +131,7 @@ public class CollectionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> DeleteCollection(string id)
     {
         try

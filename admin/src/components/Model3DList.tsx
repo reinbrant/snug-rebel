@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Eye, Trash2 } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
-import { API_BASE, readErrorMessage, resolveAssetUrl } from '../lib/config'
+import { API_BASE, apiFetch, readErrorMessage, resolveAssetUrl } from '../lib/config'
 import '../Model3d.css'
 
 interface Model3DListProps {
@@ -21,7 +21,7 @@ export function Model3DList({ productId, refreshKey = 0, onModelDeleted }: Model
     async (signal: AbortSignal) => {
       try {
         setIsLoading(true)
-        const response = await fetch(`${API_BASE}/api/Product3DModel/product/${encodeURIComponent(productId)}`, { signal })
+        const response = await apiFetch(`${API_BASE}/api/Product3DModel/product/${encodeURIComponent(productId)}`, { signal })
         if (!response.ok) {
           throw new Error(await readErrorMessage(response, `Failed to load models (HTTP ${response.status}).`))
         }
@@ -50,7 +50,7 @@ export function Model3DList({ productId, refreshKey = 0, onModelDeleted }: Model
     setDeletingId(modelId)
     setError(null)
     try {
-      const response = await fetch(`${API_BASE}/api/Product3DModel/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
+      const response = await apiFetch(`${API_BASE}/api/Product3DModel/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, `Failed to delete model (HTTP ${response.status}).`))
       }

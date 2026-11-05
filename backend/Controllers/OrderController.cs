@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
@@ -15,6 +16,42 @@ namespace backend.Controllers
         public OrderController(AppDbContext context)
         {
             _context = context;
+        }
+
+        [HttpGet]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> GetOrders()
+        {
+            var orders = await _context.Orders.AsNoTracking().AsSplitQuery()
+                .Include(o => o.OrderItems).Include(o => o.Shipments)
+                .OrderByDescending(o => o.PlacedAt).ToListAsync();
+            return Ok(orders.Select(MapToOrderDto));
+        }
+
+        [HttpPut("{orderId}/shipment")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> SaveShipment(string orderId, [FromBody] ShipmentRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Courier) || string.IsNullOrWhiteSpace(request.TrackingNumber))
+                return BadRequest(new { message = "Courier and tracking number are required." });
+            var order = await _context.Orders.Include(o => o.Shipments).FirstOrDefaultAsync(o => o.PkOrderId == orderId);
+            if (order == null) return NotFound();
+            if (order.Status is OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.Refunded)
+                return Conflict(new { message = "This order cannot be shipped in its current status." });
+            var shipment = order.Shipments.OrderByDescending(s => s.ShippedAt).FirstOrDefault();
+            if (shipment == null) { shipment = new Shipment { FkOrderId = orderId }; _context.Shipments.Add(shipment); }
+            shipment.Courier = request.Courier.Trim(); shipment.TrackingNumber = request.TrackingNumber.Trim();
+            shipment.Status = ShipmentStatus.InTransit; shipment.ShippedAt ??= DateTime.UtcNow;
+            if (order.Status != OrderStatus.Shipped)
+                _context.OrderStatusHistories.Add(new OrderStatusHistory
+                {
+                    FkOrderId = orderId, Status = OrderStatus.Shipped, ChangedAt = DateTime.UtcNow,
+                    ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                    Note = "Shipment created by staff."
+                });
+            order.Status = OrderStatus.Shipped; order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
 
         [HttpGet("user/{userId}")]
@@ -131,16 +168,37 @@ namespace backend.Controllers
                 if (authenticatedUserId == null && normalizedSessionToken == null)
                     return BadRequest(new { error = "InvalidIdentifier", message = "A UserId or SessionToken must be provided." });
 
-                var cart = await _context.Carts
-                    .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkProduct)
-                    .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkSize)
-                    .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkColor)
-                    .FirstOrDefaultAsync(c =>
-                        (authenticatedUserId != null && c.FkUserId == authenticatedUserId) ||
-                        (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
-
+                var directCheckout = request.DirectItems is { Count: > 0 };
+                Cart? cart;
+                if (directCheckout)
+                {
+                    cart = new Cart();
+                    foreach (var item in request.DirectItems!)
+                    {
+                        if (item.Quantity <= 0) return BadRequest(new { message = "Quantity must be positive." });
+                        var query = _context.ProductVariants.Include(v => v.FkProduct).Include(v => v.FkSize).Include(v => v.FkColor)
+                            .Where(v => v.FkProductId == item.ProductId && v.IsActive && v.FkProduct.IsActive);
+                        if (!string.IsNullOrWhiteSpace(item.ProductVariantId)) query = query.Where(v => v.PkProductVariantId == item.ProductVariantId);
+                        if (!string.IsNullOrWhiteSpace(item.Size)) query = query.Where(v => v.FkSize.Label == item.Size);
+                        if (!string.IsNullOrWhiteSpace(item.Color)) query = query.Where(v => v.FkColor.Name == item.Color);
+                        var variant = await query.OrderBy(v => v.PkProductVariantId).FirstOrDefaultAsync();
+                        if (variant == null) return BadRequest(new { message = "The selected product options are unavailable." });
+                        cart.CartItems.Add(new CartItem { FkProductVariant = variant, Quantity = item.Quantity });
+                    }
+                }
+                else
+                {
+                    cart = await _context.Carts
+                        .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkProduct)
+                        .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkSize)
+                        .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkColor)
+                        .FirstOrDefaultAsync(c => (authenticatedUserId != null && c.FkUserId == authenticatedUserId) ||
+                            (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
+                }
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = "No active cart was found." });
                 if (!cart.CartItems.Any()) return BadRequest(new { error = "EmptyCart", message = "Cannot place an order because the cart is empty." });
+                if (cart.CartItems.Any(i => !i.FkProductVariant.IsActive || !i.FkProductVariant.FkProduct.IsActive))
+                    return Conflict(new { message = "An item in this order is no longer available." });
 
                 // 3. Satisfy ck_orders_owner (_fk_user_id IS NOT NULL OR contact_email IS NOT NULL)
                 string? contactEmail = !string.IsNullOrWhiteSpace(request.Email)
@@ -261,7 +319,7 @@ namespace backend.Controllers
 
                         // Atomic Stock Decrement via ExecuteUpdateAsync
                         var affected = await _context.ProductVariants
-                            .Where(pv => pv.PkProductVariantId == variant.PkProductVariantId && pv.StockQuantity >= cartItem.Quantity)
+                            .Where(pv => pv.PkProductVariantId == variant.PkProductVariantId && pv.IsActive && pv.FkProduct.IsActive && pv.StockQuantity >= cartItem.Quantity)
                             .ExecuteUpdateAsync(s => s.SetProperty(pv => pv.StockQuantity, pv => pv.StockQuantity - cartItem.Quantity));
 
                         if (affected == 0)
@@ -330,7 +388,7 @@ namespace backend.Controllers
                         ChangedAt = now
                     });
 
-                    _context.CartItems.RemoveRange(cart.CartItems);
+                    if (!directCheckout) _context.CartItems.RemoveRange(cart.CartItems);
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();

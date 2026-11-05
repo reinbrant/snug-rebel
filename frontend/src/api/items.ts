@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, resolveAssetUrl } from './api'
 import { MOCK_PRODUCTS } from '../data/products'
 
 export type ItemColor = { name: string; hex: string }
@@ -137,12 +137,13 @@ const MOCK_REVIEWS: Review[] = [
 const simulateNetwork = () => new Promise((resolve) => setTimeout(resolve, 150))
 
 export async function getItem(id: string): Promise<ItemDetail | null> {
-    if (import.meta.env.VITE_USE_MOCK_API !== 'false') {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         await simulateNetwork()
         return buildMockItemDetail(id)
     }
     try {
-        return await apiFetch<ItemDetail>(`/Product/GetProductByID/${encodeURIComponent(id)}`)
+        const item = await apiFetch<ItemDetail>(`/Product/GetProductByID/${encodeURIComponent(id)}`)
+        return { ...item, imageSrc: resolveAssetUrl(item.imageSrc) }
     } catch (error) {
         if (error instanceof Error && error.message.includes('404')) {
             return null
@@ -151,8 +152,12 @@ export async function getItem(id: string): Promise<ItemDetail | null> {
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function getItemReviews(_id: string): Promise<Review[]> {
-    await simulateNetwork()
-    return MOCK_REVIEWS
+export async function getItemReviews(id: string): Promise<Review[]> {
+    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
+        await simulateNetwork()
+        return MOCK_REVIEWS
+    }
+    const rows = await apiFetch<Array<{ pkReviewId: string; userDisplayName?: string; rating: number; body?: string; createdAt: string }>>(`/Review/product/${encodeURIComponent(id)}`)
+    return rows.map(r => ({ id: r.pkReviewId, author: r.userDisplayName || 'Customer', rating: r.rating,
+        body: r.body || '', postedAt: r.createdAt, verified: true }))
 }

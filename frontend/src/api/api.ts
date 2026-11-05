@@ -1,4 +1,4 @@
-const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
+const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5146/api').replace(/\/$/, '')
 
 // Thrown for any failed request
 export class ApiError extends Error {
@@ -39,4 +39,9 @@ export async function apiFetch<T>(endpoint: string, init: RequestInit = {}): Pro
 
     const text = await res.text()
     return (text ? JSON.parse(text) : undefined) as T
+}
+export function resolveAssetUrl(url: string | null | undefined): string {
+    if (!url) return ''
+    if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:')) return url
+    return `${API_URL.replace(/\/api$/, '')}${url.startsWith('/') ? '' : '/'}${url}`
 }

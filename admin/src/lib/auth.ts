@@ -1,6 +1,6 @@
 import type { AuthUser } from '../types'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5146'
+import { API_BASE, apiFetch } from './config'
 
 async function readErrorMessage(response: Response) {
   try {
@@ -12,7 +12,7 @@ async function readErrorMessage(response: Response) {
 }
 
 export async function loginWithEmailPassword(email: string, password: string) {
-  const response = await fetch(`${API_BASE}/api/Auth/login`, {
+  const response = await apiFetch(`${API_BASE}/api/Auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

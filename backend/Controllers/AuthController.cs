@@ -4,6 +4,9 @@ using backend.Data;
 using backend.DTO;
 using backend.Models;
 using BCrypt.Net;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace backend.Controllers;
 
@@ -16,6 +19,23 @@ public class AuthController : ControllerBase
     public AuthController(AppDbContext context)
     {
         _context = context;
+    }
+
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return NoContent();
+    }
+
+    [HttpGet("session")]
+    public async Task<IActionResult> Session()
+    {
+        var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var user = id == null ? null : await _context.Users.FindAsync(id);
+        if (user == null || !user.IsActive) return Unauthorized();
+        return Ok(new { user.PkUserId, user.UserEmail, user.FirstName, user.LastName,
+            user.PhoneNumber, role = user.Role.ToString(), user.IsActive });
     }
 
     [HttpPost("register")]
@@ -68,7 +88,7 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { error = "InvalidCredentials", message = "Invalid email or password." });
             }
 
-            if (!user.IsActive) return Forbid(); // Account deactivated
+            if (!user.IsActive) return StatusCode(403, new { message = "This account is inactive." }); // Account deactivated
 
             // Log the login action in audit_logs based on your schema
             _context.AuditLogs.Add(new AuditLog
@@ -79,8 +99,14 @@ public class AuthController : ControllerBase
             });
             await _context.SaveChangesAsync();
 
-            user.PasswordHash = null!; // Hide hash from frontend
-            return Ok(user);
+            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.PkUserId),
+                    new Claim(ClaimTypes.Role, user.Role.ToString())
+                }, CookieAuthenticationDefaults.AuthenticationScheme)));
+            return Ok(new { user.PkUserId, user.UserEmail, user.FirstName, user.LastName,
+                user.PhoneNumber, role = user.Role.ToString(), user.IsActive });
         }
         catch (Exception ex)
         {

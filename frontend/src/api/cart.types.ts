@@ -18,9 +18,8 @@ export type Cart = {
 
 export const EMPTY_CART: Cart = { id: null, lines: [] }
 
-// What to add. A size is the variant: the backend finds or creates the row for (product, size).
-// Leave size out to get the product's default size.
-export type CartTarget = { productId: string; size?: string | null }
+// Leave options out to use the product's configured default inventory entry.
+export type CartTarget = { productId: string; size?: string | null; color?: string | null; productVariantId?: string }
 
 export type CartOwner = { sessionToken: string } | { userId: string }
 
