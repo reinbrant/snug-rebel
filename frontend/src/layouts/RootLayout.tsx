@@ -4,6 +4,7 @@ import CartDrawer from '../components/shop/CartDrawer.tsx'
 import { useCart } from '../context/cartContext.ts'
 import { pageFromPath, ROUTES } from '../routes.ts'
 import { useAuth } from '../context/authContext.ts'
+import Footer from '../components/Footer.tsx'
 
 export default function RootLayout() {
   const { pathname } = useLocation()
@@ -45,6 +46,8 @@ export default function RootLayout() {
         <Outlet />
         <ScrollRestoration />
       </main>
+
+      <Footer />
     </>
   )
 }
