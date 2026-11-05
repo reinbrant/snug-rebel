@@ -41,6 +41,8 @@ const PLACEHOLDER =
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#7a7a7a"/></svg>',
     )
 
+export { resolveAssetUrl }
+
 const base = { imageSrc: PLACEHOLDER, rating: 5, reviewCount: 10, soldCount: 20 }
 
 export const MOCK_PRODUCTS: Product[] = [
@@ -60,6 +62,17 @@ interface BackendCategory {
     slug: string
 }
 
+interface Backend3DModel {
+    id: string
+    productId: string
+    modelUrl: string
+    previewImageUrl?: string | null
+    isActive: boolean
+}
+
+const isPlaceholderImage = (src?: string | null) =>
+    !src || src.startsWith('data:image/svg+xml')
+
 export async function getProducts(): Promise<Product[]> {
     if (import.meta.env.VITE_USE_MOCK_API === 'true') {
         return MOCK_PRODUCTS
@@ -70,7 +83,6 @@ export async function getProducts(): Promise<Product[]> {
         apiFetch<BackendCategory[]>('/Category').catch(() => [] as BackendCategory[]),
     ])
 
-    // Map category IDs and names to normalized lowercase slugs (tops, bottoms, etc.)
     const categoryMap = new Map<string, string>()
     for (const c of rawCategories) {
         const slug = (c.slug || c.categoryName || '').trim().toLowerCase()
@@ -79,16 +91,39 @@ export async function getProducts(): Promise<Product[]> {
         if (c.slug) categoryMap.set(c.slug.trim().toLowerCase(), slug)
     }
 
-    return rawProducts.map((p) => {
-        const normalized = new Set<string>()
-        for (const rawCat of p.categories ?? []) {
-            const key = String(rawCat).trim().toLowerCase()
-            const mapped = categoryMap.get(key)
-            if (mapped) normalized.add(mapped)
-            normalized.add(key)
-        }
-        if ((p.soldCount ?? 0) > 0) normalized.add('best-selling')
+    const enriched = await Promise.all(
+        rawProducts.map(async (p) => {
+            const normalized = new Set<string>()
+            for (const rawCat of p.categories ?? []) {
+                const key = String(rawCat).trim().toLowerCase()
+                const mapped = categoryMap.get(key)
+                if (mapped) normalized.add(mapped)
+                normalized.add(key)
+            }
+            if ((p.soldCount ?? 0) > 0) normalized.add('best-selling')
 
-        return { ...p, imageSrc: resolveAssetUrl(p.imageSrc), categories: Array.from(normalized) }
-    })
+            let imageSrc = p.imageSrc
+            if (isPlaceholderImage(imageSrc)) {
+                try {
+                    const models = await apiFetch<Backend3DModel[]>(
+                        `/Product3DModel/product/${encodeURIComponent(p.id)}`
+                    ).catch(() => [] as Backend3DModel[])
+                    const activePreview = models.find(m => m.isActive && m.previewImageUrl)?.previewImageUrl
+                    if (activePreview) {
+                        imageSrc = activePreview
+                    }
+                } catch {
+                    // Ignore fetch errors for card previews
+                }
+            }
+
+            return {
+                ...p,
+                imageSrc: resolveAssetUrl(imageSrc),
+                categories: Array.from(normalized),
+            }
+        })
+    )
+
+    return enriched
 }

@@ -489,7 +489,16 @@ namespace backend.Controllers
                     City = CleanText(address?.City),
                     Province = CleanText(address?.Province)
                 },
-                Events = events
+                Events = events,
+                Items = order.OrderItems.Select(oi => new OrderTrackingItemDTO
+                {
+                    ProductName = oi.ProductName,
+                    SizeLabel = oi.SizeLabel,
+                    ColorName = oi.ColorName,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice,
+                    LineTotal = oi.LineTotal
+                }).ToList()
             };
         }
 

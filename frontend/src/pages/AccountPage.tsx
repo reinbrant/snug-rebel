@@ -25,7 +25,7 @@ export default function AccountPage() {
   useEffect(() => {
     if (!userId) return
     const controller = new AbortController()
-    apiFetch<CustomerOrder[]>('/Order/mine', { signal: controller.signal })
+    apiFetch<CustomerOrder[]>(`/Order/user/${userId}`, { signal: controller.signal })
       .then(data => { if (!controller.signal.aborted) { setOrders(data); setOrdersError('') } })
       .catch(error => { if (!controller.signal.aborted) setOrdersError(authErrorMessage(error)) })
       .finally(() => { if (!controller.signal.aborted) setLoadingOrders(false) })

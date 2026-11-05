@@ -22,6 +22,17 @@ namespace backend.DTO
         public DateTime? DeliveredAt { get; set; }
         public OrderTrackingShipToDTO ShipTo { get; set; } = new();
         public List<OrderTrackingEventDTO> Events { get; set; } = new();
+        public List<OrderTrackingItemDTO> Items { get; set; } = new();
+    }
+
+    public class OrderTrackingItemDTO
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public string SizeLabel { get; set; } = string.Empty;
+        public string ColorName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal LineTotal { get; set; }
     }
 
     public class OrderTrackingShipToDTO
