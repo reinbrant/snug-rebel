@@ -4,7 +4,7 @@
 // Assets
 import about_us_upper from '../assets/about_us_upper.svg';
 import about_us_header from '../assets/about_us_header.svg';
-import about_us_image from '../assets/about_us_image.svg';
+import about_us_image from '../assets/right.png';
 
 export default function AboutUs() {
   return (
@@ -31,13 +31,13 @@ export default function AboutUs() {
             
             <div className="w-1/2 h-full flex flex-col justify-center pr-4 lg:pr-8">
               
-              <div className="h-1/2 flex flex-col justify-end pb-4 lg:pb-8">
+              <div className="h-1/2 flex flex-col justify-end pb-4 lg:pb-8 -mt-8">
                 <img 
                   src={about_us_header} 
                   alt="About Us" 
                   className="h-24 md:h-28 lg:h-32 object-contain self-start mb-4 lg:mb-8"
                 />
-                <h1 className="text-white text-3xl md:text-3xl lg:text-5xl font-extrabold tracking-widest uppercase leading-none">
+                <h1 className="text-white text-3xl md:text-3xl lg:text-5xl font-extrabold tracking-widest uppercase leading-none ">
                   Snug Rebel
                 </h1>
               </div>
