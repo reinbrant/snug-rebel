@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router";
 import { Package, PackageCheck, ReceiptText, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Star, X } from "lucide-react";
 import star_bg from "../assets/star_bg.jpg";
 import order_divider from "../assets/order_divider.png";
 import { ApiError, apiFetch } from "../api/api";
@@ -221,6 +223,8 @@ interface LookupResult {
 
 type TrackingItem = {
 	pkOrderItemId?: string;
+	orderItemId?: string;
+	productId?: string;
 	productName?: string;
 	name?: string;
 	sku?: string;
@@ -251,6 +255,8 @@ export default function OrderTrackingPage() {
 	const { user } = useAuth();
 	const [authItems, setAuthItems] = useState<TrackingItem[] | null>(null);
 	const [loadingItems, setLoadingItems] = useState(false);
+
+	const [reviewItem, setReviewItem] = useState<any | null>(null);
 
 	// Fetch authenticated user's orders so we can hydrate the items modal
 	useEffect(() => {
@@ -738,9 +744,23 @@ export default function OrderTrackingPage() {
 													{formatPrice(unitPrice)}
 												</p>
 											</div>
-											<span className="font-bold text-sm whitespace-nowrap text-[#141414]">
-												{formatPrice(lineTotal)}
-											</span>
+											<div className="flex flex-col items-end gap-1">
+												<span className="font-bold text-sm whitespace-nowrap text-[#141414]">
+													{formatPrice(lineTotal)}
+												</span>
+												{order.status ===
+													"Delivered" && (
+													<button
+														type="button"
+														onClick={() =>
+															setReviewItem(item)
+														}
+														className="text-[11px] font-bold uppercase tracking-wide text-neutral-500 underline hover:text-brand-red transition-colors cursor-pointer"
+													>
+														Leave a review
+													</button>
+												)}
+											</div>
 										</div>
 									);
 								})
@@ -787,6 +807,138 @@ export default function OrderTrackingPage() {
 					</div>
 				</div>
 			)}
+			{reviewItem && (
+				<ReviewModal
+					item={reviewItem}
+					onClose={() => setReviewItem(null)}
+				/>
+			)}
+		</div>
+	);
+}
+
+function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
+	const { user } = useAuth();
+	const [rating, setRating] = useState(5);
+	const [hoverRating, setHoverRating] = useState<number | null>(null);
+	const [body, setBody] = useState("");
+	const [submitting, setSubmitting] = useState(false);
+	const [error, setError] = useState("");
+
+	const nonSpaceCount = body.replace(/\s/g, "").length;
+
+	const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		const val = e.target.value;
+		if (val.replace(/\s/g, "").length <= 100) {
+			setBody(val);
+		}
+	};
+
+	const handleSubmit = async () => {
+		if (!user?.pkUserId) return setError("You must be logged in.");
+		
+		const resolvedProductId = item.productId || item.fkProductId || item.FkProductId;
+		const resolvedOrderItemId = item.orderItemId || item.pkOrderItemId || item.PkOrderItemId;
+
+		if (!resolvedProductId || !resolvedOrderItemId) {
+			return setError("Missing item reference IDs. Please ensure backend is returning ProductId and OrderItemId.");
+		}
+
+		setSubmitting(true);
+		setError("");
+		try {
+			await apiFetch("/Review", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					productId: resolvedProductId,
+					userId: user.pkUserId,
+					orderItemId: resolvedOrderItemId,
+					rating: rating,
+					body: body.trim(),
+				}),
+			});
+			onClose();
+		} catch (err: any) {
+			setError(err.message || "Failed to submit review.");
+			setSubmitting(false);
+		}
+	};
+
+	const displayRating = hoverRating !== null ? hoverRating : rating;
+
+	return (
+		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in">
+			<div className="w-full max-w-md bg-white p-6 shadow-[8px_8px_0_var(--color-brand-red-dark)] border-4 border-black">
+				<div className="flex items-center justify-between mb-4">
+					<h3 className="font-display text-2xl font-black uppercase tracking-tight">
+						Leave a Review
+					</h3>
+					<button
+						onClick={onClose}
+						className="hover:text-brand-red transition-colors"
+					>
+						<X size={24} strokeWidth={3} />
+					</button>
+				</div>
+
+				<p className="text-sm font-bold text-neutral-600 mb-4 truncate">
+					{item.productName}
+				</p>
+
+				{error && (
+					<p className="mb-4 text-sm font-bold text-brand-red">
+						{error}
+					</p>
+				)}
+
+				<div
+					className="mb-6 flex gap-2"
+					onMouseLeave={() => setHoverRating(null)}
+				>
+					{[1, 2, 3, 4, 5].map((sessionStar) => (
+						<div
+							key={sessionStar}
+							className="cursor-pointer transition-transform hover:scale-110"
+							onMouseEnter={() => setHoverRating(sessionStar)}
+							onClick={() => setRating(sessionStar)}
+						>
+							<Star
+								size={40}
+								strokeWidth={1.5}
+								className={
+									displayRating >= sessionStar
+										? "fill-brand-orange text-brand-orange"
+										: "text-neutral-300 fill-neutral-100"
+								}
+							/>
+						</div>
+					))}
+				</div>
+
+				<div className="relative mb-6">
+					<textarea
+						rows={4}
+						placeholder="What did you think about this item? (Optional)"
+						value={body}
+						onChange={handleBodyChange}
+						className="w-full resize-none border-2 border-black bg-neutral-50 p-3 font-medium outline-none focus:border-brand-red transition-colors"
+					/>
+					<span
+						className={`absolute bottom-3 right-3 text-xs font-bold ${nonSpaceCount >= 100 ? "text-brand-red" : "text-neutral-400"}`}
+					>
+						{nonSpaceCount} / 100
+					</span>
+				</div>
+
+				<button
+					onClick={handleSubmit}
+					disabled={submitting}
+					className="w-full bg-[#141414] py-3 font-display text-lg font-black uppercase text-white hover:bg-[#e50914] transition-colors disabled:opacity-50"
+				>
+					{submitting ? "Submitting..." : "Submit Review"}
+				</button>
+			</div>
 		</div>
 	);
 }

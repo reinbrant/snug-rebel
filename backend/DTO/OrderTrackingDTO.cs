@@ -27,6 +27,8 @@ namespace backend.DTO
 
     public class OrderTrackingItemDTO
     {
+        public string OrderItemId { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string SizeLabel { get; set; } = string.Empty;
         public string ColorName { get; set; } = string.Empty;
