@@ -749,16 +749,19 @@ function CategoriesPage() {
 }
 
 function OrdersPage() {
-  const [orders, setOrders] = useState<OrderItem[]>([])
-  const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null)
+  const [orders, setOrders] = useState<any[]>([])
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
+  const [newStatus, setNewStatus] = useState('')
+  const [savingStatus, setSavingStatus] = useState(false)
   const [shipment, setShipment] = useState({ courier: '', trackingNumber: '' })
   const [savingShipment, setSavingShipment] = useState(false)
-
   const [error, setError] = useState('')
+
   useEffect(() => {
     requestJson('/api/Order').then(data => setOrders(data.map((o: any) => ({
       orderId: o.pkOrderId, id: o.orderNumber, customer: o.contactEmail || o.fkUserId || 'Guest', total: o.totalAmount,
-      status: o.status, date: new Date(o.placedAt).toLocaleDateString(), channel: 'Web',
+      status: o.status, courier: o.courier || 'None', trackingNumber: o.trackingNumber || 'N/A',
+      date: new Date(o.placedAt).toLocaleDateString(),
       items: (o.items ?? []).map((i: any) => ({ name: `${i.productName} (${i.sku})`, qty: i.quantity, price: i.unitPrice })),
     })))).catch(e => setError(e.message))
   }, [])
@@ -772,12 +775,12 @@ function OrdersPage() {
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Courier</th><th>Amount</th><th>Status</th></tr></thead>
             <tbody>
               {orders.map((order) => (
-                <tr key={order.id} className="row-clickable" onClick={() => { setSelectedOrder(order); setShipment({ courier: '', trackingNumber: '' }); setError('') }}>
-                  <td>{order.id}</td><td>{order.customer}</td><td>{formatMoney(order.total)}</td>
-                  <td><span className={`status-pill ${order.status === 'Paid' ? 'success' : 'warning'}`}>{order.status}</span></td>
+                <tr key={order.id} className="row-clickable" onClick={() => { setSelectedOrder(order); setNewStatus(order.status); setShipment({ courier: order.courier !== 'None' ? order.courier : '', trackingNumber: order.trackingNumber !== 'N/A' ? order.trackingNumber : '' }); setError('') }}>
+                  <td>{order.id}</td><td>{order.customer}</td><td>{order.courier}</td><td>{formatMoney(order.total)}</td>
+                  <td><span className={`status-pill ${order.status === 'Paid' || order.status === 'Shipped' || order.status === 'Delivered' ? 'success' : 'warning'}`}>{order.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -792,22 +795,52 @@ function OrdersPage() {
               <button className="icon-button" onClick={() => setSelectedOrder(null)}>×</button>
             </div>
             {error && <p className="error-banner" role="alert">{error}</p>}
-            <p>Status: {selectedOrder.status}</p>
-            {!['Delivered', 'Cancelled', 'Refunded'].includes(selectedOrder.status) && <form className="product-form-grid" onSubmit={async event => {
+            
+            <div className="order-modal-grid">
+              <div className="order-detail-block">
+                <div className="detail-list">
+                  <div><label>Customer</label><span>{selectedOrder.customer}</span></div>
+                  <div><label>Courier</label><span>{selectedOrder.courier}</span></div>
+                  <div><label>Tracking Number</label><span>{selectedOrder.trackingNumber}</span></div>
+                </div>
+              </div>
+              <div className="order-detail-block">
+                <label><span>Update Status</span></label>
+                <div className="flex gap-2 mt-2">
+                  <select aria-label="Order Status" value={newStatus} onChange={e => setNewStatus(e.target.value)} className="w-full">
+                    {['Pending', 'Paid', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <button type="button" className="primary-button small-button" disabled={savingStatus} onClick={async () => {
+                    setSavingStatus(true); setError('')
+                    try {
+                      await requestJson(`/api/Order/${selectedOrder.orderId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) })
+                      setSelectedOrder((c: any) => c ? { ...c, status: newStatus } : c)
+                      setOrders((c: any[]) => c.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: newStatus } : o))
+                    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update status.') }
+                    finally { setSavingStatus(false) }
+                  }}>{savingStatus ? 'Saving…' : 'Update'}</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-items-header"><h4>Shipment details</h4></div>
+            <form className="product-form-grid mb-4" onSubmit={async event => {
               event.preventDefault(); setSavingShipment(true); setError('')
               try {
                 await requestJson(`/api/Order/${selectedOrder.orderId}/shipment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(shipment) })
-                setSelectedOrder(current => current ? { ...current, status: 'Shipped' } : current)
-                setOrders(current => current.map(o => o.id === selectedOrder.id ? { ...o, status: 'Shipped' } : o))
+                setSelectedOrder((current: any) => current ? { ...current, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : current)
+                setOrders((current: any[]) => current.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : o))
               } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save shipment.') }
               finally { setSavingShipment(false) }
             }}>
-              <label><span>Courier</span><input required maxLength={100} value={shipment.courier} onChange={e => setShipment({ ...shipment, courier: e.target.value })} /></label>
-              <label><span>Tracking number</span><input required maxLength={100} value={shipment.trackingNumber} onChange={e => setShipment({ ...shipment, trackingNumber: e.target.value })} /></label>
-              <button className="primary-button" disabled={savingShipment}>{savingShipment ? 'Saving…' : 'Save shipment'}</button>
-            </form>}
+              <label><span>Courier Name</span><input required maxLength={100} value={shipment.courier} onChange={e => setShipment({ ...shipment, courier: e.target.value })} /></label>
+              <label><span>Tracking Number</span><input required maxLength={100} value={shipment.trackingNumber} onChange={e => setShipment({ ...shipment, trackingNumber: e.target.value })} /></label>
+              <button className="primary-button full-span">Save shipment</button>
+            </form>
+
+            <div className="order-items-header"><h4>Items</h4></div>
             <div className="order-items-list">
-              {(selectedOrder.items ?? []).map((item) => (
+              {(selectedOrder.items ?? []).map((item: any) => (
                 <div key={item.name} className="order-item-row">
                   <div><strong>{item.name}</strong><span>Qty {item.qty}</span></div>
                   <span>{formatMoney(item.price)}</span>

@@ -190,28 +190,29 @@ public class ProductController(AppDbContext context) : ControllerBase
                 if (!request.HasSizes)
                 {
                     defaultSize = await context.Sizes.FirstOrDefaultAsync(s => s.Label == ProductOptions.DefaultSize);
-                    if (defaultSize == null) { defaultSize = new Size { Label = ProductOptions.DefaultSize, SortOrder = 0 }; context.Sizes.Add(defaultSize); }
+                    if (defaultSize == null) { defaultSize = new Size { Label = ProductOptions.DefaultSize, SortOrder = 0 }; context.Sizes.Add(defaultSize); await context.SaveChangesAsync(); }
                 }
                 if (!request.HasColors)
                 {
                     defaultColor = await context.Colors.FirstOrDefaultAsync(c => c.Name == ProductOptions.DefaultColor);
-                    if (defaultColor == null) { defaultColor = new Color { Name = ProductOptions.DefaultColor, HexCode = "#000000" }; context.Colors.Add(defaultColor); }
+                    if (defaultColor == null) { defaultColor = new Color { Name = ProductOptions.DefaultColor, HexCode = "#000000" }; context.Colors.Add(defaultColor); await context.SaveChangesAsync(); }
                 }
-                var retained = new HashSet<ProductVariant>();
+
                 foreach (var v in request.Variants)
                 {
-                    // Reuse inactive combinations to preserve order/cart foreign keys.
-                    var row = product.ProductVariants.FirstOrDefault(old => old.PkProductVariantId == v.Id)
-                        ?? product.ProductVariants.FirstOrDefault(old => old.FkSizeId == (request.HasSizes ? v.SizeId : defaultSize?.PkSizeId)
-                            && old.FkColorId == (request.HasColors ? v.ColorId : defaultColor?.PkColorId));
-                    if (row == null) { row = new ProductVariant(); product.ProductVariants.Add(row); }
-                    retained.Add(row);
-                    if (request.HasSizes) row.FkSizeId = v.SizeId!.Value; else row.FkSize = defaultSize!;
-                    if (request.HasColors) row.FkColorId = v.ColorId!.Value; else row.FkColor = defaultColor!;
-                    row.Sku = v.Sku.Trim(); row.StockQuantity = v.Stock;
-                    row.PriceOverride = v.PriceOverride; row.IsActive = v.IsActive; row.ReorderLevel = 5;
+                    var row = new ProductVariant
+                    {
+                        FkProductId = product.PkProductId,
+                        FkSizeId = request.HasSizes ? (v.SizeId ?? defaultSize!.PkSizeId) : defaultSize!.PkSizeId,
+                        FkColorId = request.HasColors ? (v.ColorId ?? defaultColor!.PkColorId) : defaultColor!.PkColorId,
+                        Sku = v.Sku.Trim(),
+                        StockQuantity = v.Stock,
+                        PriceOverride = v.PriceOverride,
+                        IsActive = v.IsActive,
+                        ReorderLevel = 5
+                    };
+                    product.ProductVariants.Add(row);
                 }
-                foreach (var old in product.ProductVariants.Where(v => !retained.Contains(v))) old.IsActive = false;
             }
             if (request.Images != null)
             {

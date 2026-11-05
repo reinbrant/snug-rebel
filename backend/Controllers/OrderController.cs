@@ -46,11 +46,39 @@ namespace backend.Controllers
             if (order.Status != OrderStatus.Shipped)
                 _context.OrderStatusHistories.Add(new OrderStatusHistory
                 {
-                    FkOrderId = orderId, Status = OrderStatus.Shipped, ChangedAt = DateTime.UtcNow,
+                    FkOrderId = orderId,
+                    Status = OrderStatus.Shipped,
+                    ChangedAt = DateTime.UtcNow,
                     ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
                     Note = "Shipment created by staff."
                 });
             order.Status = OrderStatus.Shipped; order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpPut("{orderId}/status")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> UpdateOrderStatus(string orderId, [FromBody] UpdateOrderStatusRequest request)
+        {
+            var order = await _context.Orders.Include(o => o.OrderStatusHistories).FirstOrDefaultAsync(o => o.PkOrderId == orderId);
+            if (order == null) return NotFound();
+
+            if (!Enum.TryParse<OrderStatus>(request.Status, true, out var newStatus))
+                return BadRequest(new { message = "Invalid order status." });
+
+            order.Status = newStatus;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            _context.OrderStatusHistories.Add(new OrderStatusHistory
+            {
+                FkOrderId = orderId,
+                Status = newStatus,
+                ChangedAt = DateTime.UtcNow,
+                ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                Note = $"Status updated to {newStatus} by admin."
+            });
+
             await _context.SaveChangesAsync();
             return NoContent();
         }
