@@ -708,7 +708,6 @@ export default function OrderTrackingPage() {
 										item.lineTotal ??
 										unitPrice * item.quantity;
 									const variantParts = [
-										item.colorName || item.color,
 										item.sizeLabel || item.size,
 									].filter(
 										(v) =>

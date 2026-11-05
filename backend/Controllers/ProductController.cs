@@ -32,6 +32,8 @@ public class ProductController(AppDbContext context) : ControllerBase
         p.BasePrice,
         p.Material,
         p.IsActive,
+        p.SalePrice,
+        p.Badge,
         hasSizes = p.ProductVariants.Any(v => v.IsActive && v.FkSize.Label != ProductOptions.DefaultSize),
         hasColors = p.ProductVariants.Any(v => v.IsActive && v.FkColor.Name != ProductOptions.DefaultColor),
         productImages = p.ProductImages.OrderBy(i => i.SortOrder),
@@ -66,6 +68,8 @@ public class ProductController(AppDbContext context) : ControllerBase
                 p.ReviewCount,
                 p.SoldCount,
                 p.FkCategoryId,
+                SalePrice = p.SalePrice,
+                Badge = p.Badge,
                 StockLeft = p.ProductVariants.Where(v => v.IsActive).Sum(v => v.StockQuantity),
                 DefaultVariantId = p.ProductVariants.Where(v => v.IsActive && v.StockQuantity > 0)
                     .OrderBy(v => v.PkProductVariantId).Select(v => v.PkProductVariantId).FirstOrDefault(),
@@ -86,6 +90,8 @@ public class ProductController(AppDbContext context) : ControllerBase
             SoldCount = p.SoldCount,
             StockLeft = p.StockLeft,
             DefaultVariantId = p.DefaultVariantId,
+            SalePrice = p.SalePrice,
+            Badge = p.Badge,
             ImageSrc = p.PrimaryImage ?? p.ModelPreview ?? Placeholder,
             Categories = new List<string> { p.FkCategoryId }
         }).ToList();
@@ -111,6 +117,7 @@ public class ProductController(AppDbContext context) : ControllerBase
             Rating = (double)p.AvgRating,
             ReviewCount = p.ReviewCount,
             SoldCount = p.SoldCount,
+            SalePrice = p.SalePrice,
             ImageSrc = p.ProductImages.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder).FirstOrDefault()?.Url
                 ?? model?.PreviewImageUrl ?? Placeholder,
             ModelUrl = model?.ModelUrl,
@@ -179,6 +186,8 @@ public class ProductController(AppDbContext context) : ControllerBase
             product.Description = request.Description;
             product.BasePrice = request.BasePrice;
             product.Material = request.Material;
+            product.SalePrice = request.SalePrice;
+            product.Badge = string.IsNullOrWhiteSpace(request.Badge) ? null : request.Badge.Trim();
             product.IsActive = request.IsActive;
             product.UpdatedAt = DateTime.UtcNow;
             if (id == null) { product.CreatedAt = DateTime.UtcNow; context.Products.Add(product); }

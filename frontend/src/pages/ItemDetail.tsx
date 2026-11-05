@@ -4,7 +4,6 @@ import { Box, Image as ImageIcon } from "lucide-react";
 import type { ItemDetail as Item, Review } from "../api/items";
 import { useCart } from "../context/cartContext";
 import AngledButton from "../components/ui/AngledButton";
-import ColorSwatches from "../components/item/ColorSwatches";
 import PillButton from "../components/ui/PillButton";
 import QuantityStepper from "../components/item/QuantityStepper";
 import ReviewsSection from "../components/item/ReviewsSection";
@@ -67,7 +66,6 @@ export default function ItemDetail() {
 }
 
 function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
-	const [color, setColor] = useState(item.colors[0]?.name ?? "");
 	const [size, setSize] = useState(
 		item.sizes.find((s) => s.available)?.label ?? "",
 	);
@@ -81,16 +79,14 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 
 	const selectedVariant = item.variants?.find(
 		(v) =>
-			(!item.sizes.length || v.size === size) &&
-			(!item.colors.length || v.color === color),
+			(!item.sizes.length || v.size === size)
 	);
 	const price = selectedVariant?.priceOverride ?? item.price;
 	const stock =
 		selectedVariant?.stock ?? (item.variants?.length ? 0 : item.stock);
 	const isOnSale = item.salePrice != null && item.salePrice < price;
 	const outOfStock = stock <= 0;
-	const missingOptions =
-		(item.sizes.length > 0 && !size) || (item.colors.length > 0 && !color);
+	const missingOptions = (item.sizes.length > 0 && !size);
 
 	const { addItem, openCart, busy } = useCart();
 
@@ -100,7 +96,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 			{
 				productId: item.id,
 				size: size || null,
-				color: color || null,
+				color: null,
 				productVariantId: selectedVariant?.id,
 			},
 			quantity,
@@ -118,7 +114,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 			name: item.name,
 			imageUrl: imgSrc,
 			unitPrice: item.salePrice ?? price,
-			color: color || item.colors?.[0]?.name || "Standard",
+			color: null,
 			size: size,
 			quantity: quantity,
 			stock,
@@ -276,13 +272,6 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 								>
 									Colors
 								</p>
-								<ColorSwatches
-									className="mt-1"
-									colors={item.colors}
-									value={color}
-									onChange={setColor}
-									labelledBy="item-colors-label"
-								/>
 							</div>
 						)}
 

@@ -363,7 +363,7 @@ namespace backend.Controllers
                     foreach (var cartItem in cart.CartItems)
                     {
                         var variant = cartItem.FkProductVariant;
-                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.BasePrice;
+                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.SalePrice ?? variant.FkProduct.BasePrice;
 
                         // Atomic Stock Decrement via ExecuteUpdateAsync
                         var affected = await _context.ProductVariants

@@ -437,7 +437,7 @@ function ProductsPage() {
   const [sizes, setSizes] = useState<{ id: number; name: string }[]>([])
   const emptyForm = () => ({
     displayId: '', slug: '', name: '', category: '', categoryId: categories[0]?.id || '',
-    description: '', material: '', price: '1499', isActive: true, hasSizes: false, hasColors: false,
+    description: '', material: '', price: '1499', salePrice: '', badge: 'none', isActive: true, hasSizes: false, hasColors: false,
     images: [] as Array<{ url: string; altText?: string }>, variants: [createVariantTemplate()],
   })
   const [form, setForm] = useState(emptyForm)
@@ -456,7 +456,7 @@ function ProductsPage() {
     return {
       id: p.pkProductId, displayId: p.displayId, slug: p.slug, name: p.productName,
       category: cats.find(c => c.id === p.fkCategoryId)?.name || 'Unknown', categoryId: p.fkCategoryId,
-      description: p.description || '', price: p.basePrice, material: p.material || '',
+      description: p.description || '', price: p.basePrice, salePrice: p.salePrice, badge: p.badge, material: p.material || '',
       stock: (p.productVariants ?? []).reduce((sum: number, v: any) => sum + v.stockQuantity, 0),
       isActive: p.isActive, status: p.isActive ? 'Active' : 'Inactive', sku: p.displayId,
       hasSizes: p.hasSizes, hasColors: p.hasColors,
@@ -496,7 +496,7 @@ function ProductsPage() {
         method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           displayId: form.displayId || null, slug: form.slug, productName: form.name, fkCategoryId: form.categoryId,
-          description: form.description, basePrice: Number(form.price), material: form.material, isActive: form.isActive,
+          description: form.description, basePrice: Number(form.price), salePrice: form.salePrice ? Number(form.salePrice) : null, badge: form.badge === 'none' ? null : form.badge, material: form.material, isActive: form.isActive,
           hasSizes: form.hasSizes, hasColors: form.hasColors, images: form.images,
           variants: form.variants.map(v => ({
             id: v.id.startsWith('var-') ? null : v.id, sku: v.sku,
@@ -525,7 +525,7 @@ function ProductsPage() {
     setForm({
       displayId: product.displayId || '', slug: product.slug, name: product.name, category: product.category,
       categoryId: product.categoryId || '', description: product.description || '', material: product.material || '',
-      price: String(product.price), isActive: product.isActive, hasSizes: product.hasSizes, hasColors: product.hasColors,
+      price: String(product.price), salePrice: product.salePrice ? String(product.salePrice) : '', badge: product.badge || 'none', isActive: product.isActive, hasSizes: product.hasSizes, hasColors: product.hasColors,
       images: product.images, variants: product.variants.length ? product.variants.map(v => createVariantTemplate(v)) : [createVariantTemplate()],
     })
     setIsProductModalOpen(true)
@@ -633,6 +633,15 @@ function ProductsPage() {
               <label><span>Material</span><input value={form.material} onChange={(e) => handleChange('material', e.target.value)} /></label>
               <label className="full-span"><span>Description</span><textarea value={form.description} onChange={(e) => handleChange('description', e.target.value)} rows={3} /></label>
               <label><span>Base price</span><input type="number" min="0" step="0.01" required value={form.price} onChange={(e) => handleChange('price', e.target.value)} /></label>
+              <label><span>Sale price (optional)</span><input type="number" min="0" step="0.01" value={form.salePrice} onChange={(e) => handleChange('salePrice', e.target.value)} /></label>
+              <label>
+                <span>Badge (optional)</span>
+                <select value={form.badge} onChange={(e) => handleChange('badge', e.target.value)}>
+                  <option value="none">None</option>
+                  <option value="new">New</option>
+                  <option value="sale">On Sale</option>
+                </select>
+              </label>
               <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={(e) => handleChange('isActive', e.target.checked)} /></label>
 
               <ProductImagesEditor images={form.images} onChange={images => handleChange('images', images)} onBusyChange={setUploadingImage} />

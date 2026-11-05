@@ -11,6 +11,8 @@ public class SaveProductRequest
     public string? Description { get; set; }
     [Range(0, 99999999)] public decimal BasePrice { get; set; }
     [MaxLength(150)] public string? Material { get; set; }
+    [Range(0, 99999999)] public decimal? SalePrice { get; set; }
+    [MaxLength(50)] public string? Badge { get; set; }
     public bool IsActive { get; set; } = true;
     public bool HasSizes { get; set; } = true;
     public bool HasColors { get; set; } = true;

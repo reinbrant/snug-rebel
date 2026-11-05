@@ -489,7 +489,6 @@ function CheckoutForm() {
 															{item.name}
 														</p>
 														<p className="text-neutral-600 text-xs">
-															{item.color} /{" "}
 															{item.size}
 														</p>
 													</div>
@@ -1415,7 +1414,6 @@ function CheckoutForm() {
 															{item.name}
 														</p>
 														<p className="text-neutral-600 text-sm">
-															{item.color} /{" "}
 															{item.size}
 														</p>
 													</div>

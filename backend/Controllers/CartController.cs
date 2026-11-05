@@ -367,7 +367,7 @@ namespace backend.Controllers
                         ProductId = p?.PkProductId ?? string.Empty,
                         ProductName = p?.ProductName ?? "Item",
                         ImageUrl = img,
-                        UnitPrice = v?.PriceOverride ?? p?.BasePrice ?? 0m,
+                        UnitPrice = v?.PriceOverride ?? p?.SalePrice ?? p?.BasePrice ?? 0m,
                         ColorName = v?.FkColor?.Name,
                         SizeLabel = v?.FkSize?.Label,
                         StockQuantity = v?.StockQuantity ?? 99
