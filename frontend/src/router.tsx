@@ -9,6 +9,8 @@ import CheckoutPage from "./pages/CheckoutPage.tsx";
 import PlaceholderPage from "./pages/PlaceholderPage.tsx";
 import AuthPage from './pages/AuthPage.tsx'
 import AccountPage from './pages/AccountPage.tsx'
+import LogInPage from './pages/LogInPage.tsx'
+import SignUpPage from './pages/SignUpPage.tsx'
 
 /** Route table. Swap each PlaceholderPage for the real page when it is made. */
 export const router = createBrowserRouter([
