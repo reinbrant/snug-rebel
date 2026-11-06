@@ -207,22 +207,46 @@ public class ProductController(AppDbContext context) : ControllerBase
                     if (defaultColor == null) { defaultColor = new Color { Name = ProductOptions.DefaultColor, HexCode = "#000000" }; context.Colors.Add(defaultColor); await context.SaveChangesAsync(); }
                 }
 
+                // 1. Deactivate any existing variants that were removed in the frontend
+                var requestVariantIds = request.Variants.Where(v => v.Id != null).Select(v => v.Id).ToList();
+                foreach (var oldVar in product.ProductVariants.Where(v => !requestVariantIds.Contains(v.PkProductVariantId)))
+                {
+                    oldVar.IsActive = false; // Soft delete ensures past order histories don't break
+                }
+
+                // 2. Loop through incoming variants (Update existing, Add new)
                 foreach (var v in request.Variants)
                 {
-                    var row = new ProductVariant
+                    if (v.Id != null)
                     {
-                        FkProductId = product.PkProductId,
-                        FkSizeId = request.HasSizes ? (v.SizeId ?? defaultSize!.PkSizeId) : defaultSize!.PkSizeId,
-                        FkColorId = request.HasColors ? (v.ColorId ?? defaultColor!.PkColorId) : defaultColor!.PkColorId,
-                        Sku = v.Sku.Trim(),
-                        StockQuantity = v.Stock,
-                        PriceOverride = v.PriceOverride,
-                        IsActive = v.IsActive,
-                        ReorderLevel = 5
-                    };
-                    product.ProductVariants.Add(row);
+                        // UPDATE existing variant
+                        var existing = product.ProductVariants.First(old => old.PkProductVariantId == v.Id);
+                        existing.FkSizeId = request.HasSizes ? (v.SizeId ?? defaultSize!.PkSizeId) : defaultSize!.PkSizeId;
+                        existing.FkColorId = request.HasColors ? (v.ColorId ?? defaultColor!.PkColorId) : defaultColor!.PkColorId;
+                        existing.Sku = v.Sku.Trim();
+                        existing.StockQuantity = v.Stock;
+                        existing.PriceOverride = v.PriceOverride;
+                        existing.IsActive = v.IsActive;
+                    }
+                    else
+                    {
+                        // ADD brand new variant
+                        var row = new ProductVariant
+                        {
+                            FkProductId = product.PkProductId,
+                            FkSizeId = request.HasSizes ? (v.SizeId ?? defaultSize!.PkSizeId) : defaultSize!.PkSizeId,
+                            FkColorId = request.HasColors ? (v.ColorId ?? defaultColor!.PkColorId) : defaultColor!.PkColorId,
+                            Sku = v.Sku.Trim(),
+                            StockQuantity = v.Stock,
+                            PriceOverride = v.PriceOverride,
+                            IsActive = v.IsActive,
+                            ReorderLevel = 5
+                        };
+                        product.ProductVariants.Add(row);
+                    }
                 }
             }
+            
             if (request.Images != null)
             {
                 // Delete before replacing so the one-primary-image index is never violated.
