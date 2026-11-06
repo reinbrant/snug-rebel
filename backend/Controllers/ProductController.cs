@@ -23,15 +23,29 @@ public class ProductController(AppDbContext context) : ControllerBase
 
     private static object AdminProduct(Product p) => new
     {
-        p.PkProductId, p.DisplayId, p.Slug, p.ProductName, p.FkCategoryId,
-        p.Description, p.BasePrice, p.Material, p.IsActive,
+        p.PkProductId,
+        p.DisplayId,
+        p.Slug,
+        p.ProductName,
+        p.FkCategoryId,
+        p.Description,
+        p.BasePrice,
+        p.SalePrice,
+        p.Badge,
+        p.Material,
+        p.IsActive,
         hasSizes = p.ProductVariants.Any(v => v.IsActive && v.FkSize.Label != ProductOptions.DefaultSize),
         hasColors = p.ProductVariants.Any(v => v.IsActive && v.FkColor.Name != ProductOptions.DefaultColor),
         productImages = p.ProductImages.OrderBy(i => i.SortOrder),
         productVariants = p.ProductVariants.Where(v => v.IsActive).Select(v => new
         {
-            v.PkProductVariantId, v.FkSizeId, v.FkColorId, v.Sku,
-            v.StockQuantity, v.PriceOverride, v.IsActive
+            v.PkProductVariantId,
+            v.FkSizeId,
+            v.FkColorId,
+            v.Sku,
+            v.StockQuantity,
+            v.PriceOverride,
+            v.IsActive
         })
     };
 
@@ -43,18 +57,45 @@ public class ProductController(AppDbContext context) : ControllerBase
     [HttpGet("ProductList")]
     public async Task<IActionResult> GetProductList()
     {
-        var products = await context.Products.AsNoTracking().Where(p => p.IsActive)
-            .Select(p => new ProductListDTO
+        // Project raw values in the query and do the ?? fallbacks in memory to avoid EF translation issues.
+        var rows = await context.Products.AsNoTracking().Where(p => p.IsActive)
+            .Select(p => new
             {
-                Id = p.PkProductId, Name = p.ProductName, Price = p.BasePrice,
-                Rating = (double)p.AvgRating, ReviewCount = p.ReviewCount, SoldCount = p.SoldCount,
+                p.PkProductId,
+                p.ProductName,
+                p.BasePrice,
+                p.SalePrice,
+                p.Badge,
+                p.AvgRating,
+                p.ReviewCount,
+                p.SoldCount,
+                p.FkCategoryId,
                 StockLeft = p.ProductVariants.Where(v => v.IsActive).Sum(v => v.StockQuantity),
                 DefaultVariantId = p.ProductVariants.Where(v => v.IsActive && v.StockQuantity > 0)
                     .OrderBy(v => v.PkProductVariantId).Select(v => v.PkProductVariantId).FirstOrDefault(),
-                ImageSrc = p.ProductImages.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder)
-                    .Select(i => i.Url).FirstOrDefault() ?? Placeholder,
-                Categories = new List<string> { p.FkCategoryId }
+                PrimaryImage = p.ProductImages.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder)
+                    .Select(i => i.Url).FirstOrDefault(),
+                ModelPreview = p.Product3DModels
+                    .Where(m => m.IsActive && m.PreviewImageUrl != null && m.PreviewImageUrl != "")
+                    .OrderByDescending(m => m.CreatedAt).Select(m => m.PreviewImageUrl).FirstOrDefault()
             }).ToListAsync();
+
+        var products = rows.Select(p => new ProductListDTO
+        {
+            Id = p.PkProductId,
+            Name = p.ProductName,
+            Price = p.BasePrice,
+            SalePrice = p.SalePrice,
+            Badge = p.Badge,
+            Rating = (double)p.AvgRating,
+            ReviewCount = p.ReviewCount,
+            SoldCount = p.SoldCount,
+            StockLeft = p.StockLeft,
+            DefaultVariantId = p.DefaultVariantId,
+            ImageSrc = p.PrimaryImage ?? p.ModelPreview ?? Placeholder,
+            Categories = new List<string> { p.FkCategoryId }
+        }).ToList();
+
         return Ok(products);
     }
 
@@ -62,14 +103,24 @@ public class ProductController(AppDbContext context) : ControllerBase
     [HttpGet("GetProductByID/{id}")]
     public async Task<IActionResult> GetProductById(string id)
     {
-        var p = await Catalog().AsNoTracking().FirstOrDefaultAsync(p => p.PkProductId == id && p.IsActive);
+        var p = await Catalog().Include(x => x.Product3DModels).AsNoTracking()
+            .FirstOrDefaultAsync(p => p.PkProductId == id && p.IsActive);
         if (p == null) return NotFound();
         var variants = p.ProductVariants.Where(v => v.IsActive).ToList();
+        var model = p.Product3DModels.Where(m => m.IsActive).OrderByDescending(m => m.CreatedAt).FirstOrDefault();
         return Ok(new ProductDetailDTO
         {
-            Id = p.PkProductId, Name = p.ProductName, Description = p.Description ?? "",
-            Price = p.BasePrice, Rating = (double)p.AvgRating, ReviewCount = p.ReviewCount, SoldCount = p.SoldCount,
-            ImageSrc = p.ProductImages.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder).FirstOrDefault()?.Url ?? Placeholder,
+            Id = p.PkProductId,
+            Name = p.ProductName,
+            Description = p.Description ?? "",
+            Price = p.BasePrice,
+            Rating = (double)p.AvgRating,
+            ReviewCount = p.ReviewCount,
+            SoldCount = p.SoldCount,
+            SalePrice = p.SalePrice,
+            ImageSrc = p.ProductImages.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder).FirstOrDefault()?.Url
+                ?? model?.PreviewImageUrl ?? Placeholder,
+            ModelUrl = model?.ModelUrl,
             Stock = variants.Sum(v => v.StockQuantity),
             Sizes = variants.Where(v => v.FkSize.Label != ProductOptions.DefaultSize)
                 .GroupBy(v => v.FkSize).OrderBy(g => g.Key.SortOrder)
@@ -134,6 +185,8 @@ public class ProductController(AppDbContext context) : ControllerBase
             product.FkCategoryId = request.FkCategoryId;
             product.Description = request.Description;
             product.BasePrice = request.BasePrice;
+            product.SalePrice = request.SalePrice;
+            product.Badge = string.IsNullOrWhiteSpace(request.Badge) ? null : request.Badge.Trim();
             product.Material = request.Material;
             product.IsActive = request.IsActive;
             product.UpdatedAt = DateTime.UtcNow;
@@ -146,28 +199,29 @@ public class ProductController(AppDbContext context) : ControllerBase
                 if (!request.HasSizes)
                 {
                     defaultSize = await context.Sizes.FirstOrDefaultAsync(s => s.Label == ProductOptions.DefaultSize);
-                    if (defaultSize == null) { defaultSize = new Size { Label = ProductOptions.DefaultSize, SortOrder = 0 }; context.Sizes.Add(defaultSize); }
+                    if (defaultSize == null) { defaultSize = new Size { Label = ProductOptions.DefaultSize, SortOrder = 0 }; context.Sizes.Add(defaultSize); await context.SaveChangesAsync(); }
                 }
                 if (!request.HasColors)
                 {
                     defaultColor = await context.Colors.FirstOrDefaultAsync(c => c.Name == ProductOptions.DefaultColor);
-                    if (defaultColor == null) { defaultColor = new Color { Name = ProductOptions.DefaultColor, HexCode = "#000000" }; context.Colors.Add(defaultColor); }
+                    if (defaultColor == null) { defaultColor = new Color { Name = ProductOptions.DefaultColor, HexCode = "#000000" }; context.Colors.Add(defaultColor); await context.SaveChangesAsync(); }
                 }
-                var retained = new HashSet<ProductVariant>();
+
                 foreach (var v in request.Variants)
                 {
-                    // Reuse inactive combinations to preserve order/cart foreign keys.
-                    var row = product.ProductVariants.FirstOrDefault(old => old.PkProductVariantId == v.Id)
-                        ?? product.ProductVariants.FirstOrDefault(old => old.FkSizeId == (request.HasSizes ? v.SizeId : defaultSize?.PkSizeId)
-                            && old.FkColorId == (request.HasColors ? v.ColorId : defaultColor?.PkColorId));
-                    if (row == null) { row = new ProductVariant(); product.ProductVariants.Add(row); }
-                    retained.Add(row);
-                    if (request.HasSizes) row.FkSizeId = v.SizeId!.Value; else row.FkSize = defaultSize!;
-                    if (request.HasColors) row.FkColorId = v.ColorId!.Value; else row.FkColor = defaultColor!;
-                    row.Sku = v.Sku.Trim(); row.StockQuantity = v.Stock;
-                    row.PriceOverride = v.PriceOverride; row.IsActive = v.IsActive; row.ReorderLevel = 5;
+                    var row = new ProductVariant
+                    {
+                        FkProductId = product.PkProductId,
+                        FkSizeId = request.HasSizes ? (v.SizeId ?? defaultSize!.PkSizeId) : defaultSize!.PkSizeId,
+                        FkColorId = request.HasColors ? (v.ColorId ?? defaultColor!.PkColorId) : defaultColor!.PkColorId,
+                        Sku = v.Sku.Trim(),
+                        StockQuantity = v.Stock,
+                        PriceOverride = v.PriceOverride,
+                        IsActive = v.IsActive,
+                        ReorderLevel = 5
+                    };
+                    product.ProductVariants.Add(row);
                 }
-                foreach (var old in product.ProductVariants.Where(v => !retained.Contains(v))) old.IsActive = false;
             }
             if (request.Images != null)
             {

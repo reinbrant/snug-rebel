@@ -1,14 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router";
 import { Package, PackageCheck, ReceiptText, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Star, X } from "lucide-react";
 import star_bg from "../assets/star_bg.jpg";
-import order_divider from "../assets/order_divider.svg";
-import { ApiError } from "../api/api";
+import order_divider from "../assets/order_divider.png";
+import { ApiError, apiFetch } from "../api/api";
 import { trackOrder } from "../api/orders";
 import type { OrderTracking } from "../api/orders";
 import { formatPrice } from "../helpers/priceFormat";
+import { useAuth } from "../context/authContext";
 import {
 	STATUS_LABEL,
 	arrivalInfo,
@@ -25,7 +29,6 @@ import type { StepId } from "../helpers/orderTimeline";
 /** 'completed' renders RED, 'pending' (not done yet / in progress) renders YELLOW. */
 type StepStatus = "completed" | "pending";
 
-/** Static artwork + label for each step. What is done / current comes from the order (helpers/orderTimeline). */
 interface TrackerStepArt {
 	label: string;
 	shape: TrackerShapeData;
@@ -33,29 +36,22 @@ interface TrackerStepArt {
 }
 
 interface TrackerShapeData {
-	/** viewBox size of the original SVG file */
 	width: number;
 	height: number;
-	/** Visual centre of the container "body" (excluding the paper-plane decorations), in viewBox units */
 	center: { x: number; y: number };
-	/** Bounding box of the original <mask> */
 	maskBox: { x: number; y: number; width: number; height: number };
-	/** Path used for the white fill + mask (from the original SVG) */
 	fillPath: string;
-	/** Path used for the coloured outline (from the original SVG) */
 	strokePath: string;
-	/** White paper-plane decorations (from the original SVG) */
 	decorations: string[];
 }
 
 const STATUS_COLORS: Record<StepStatus, string> = {
-	completed: "#F70305", // red used in the supplied SVGs
-	pending: "#FFC633", // yellow used in the supplied SVGs
+	completed: "#F70305",
+	pending: "#FFC633",
 };
 
 const ICON_COLOR = "#262626";
 
-// Artwork copied verbatim from T1.svg – T4.svg. Only the stroke colour is made dynamic.
 const SHAPE_T1: TrackerShapeData = {
 	width: 203,
 	height: 191,
@@ -121,12 +117,9 @@ const STEP_ART: Record<StepId, TrackerStepArt> = {
 	delivered: { label: "Delivered", shape: SHAPE_T4, Icon: PackageCheck },
 };
 
-// Every shape is scaled relative to T1's width so all four share one scale.
 const BASE_SHAPE_WIDTH = SHAPE_T1.width;
-// Icon width in viewBox units (body of a container is ~160 units wide).
 const ICON_VIEWBOX_UNITS = 72;
 
-/** Inline version of the supplied SVG containers so the stroke colour can change per state. */
 function TrackerShape({
 	shape,
 	color,
@@ -141,7 +134,7 @@ function TrackerShape({
 			viewBox={`0 0 ${width} ${height}`}
 			fill="none"
 			xmlns="http://www.w3.org/2000/svg"
-			className="block h-full w-full overflow-visible"
+			className="block h-full w-full overflow-visible drop-shadow-[0_8px_16px_rgba(0,0,0,0.45)]"
 			aria-hidden="true"
 		>
 			<path d={strokePath} stroke={color} strokeWidth={16} />
@@ -160,10 +153,6 @@ function TrackerShape({
 	);
 }
 
-/**
- * One step of the tracker: container artwork + Lucide icon, positioned so the container body's
- * centre sits exactly on the column's centre line (where the connector lines run).
- */
 function TrackerNode({
 	art,
 	status,
@@ -205,18 +194,12 @@ function TrackerNode({
 	);
 }
 
-/**
- * Connector between step i-1 and step i.
- * Rule: a connector is RED only when the step it leads INTO is completed; otherwise YELLOW.
- */
 function TrackerConnector({ status }: { status: StepStatus }) {
 	return (
 		<span
 			aria-hidden="true"
-			className="absolute right-1/2 top-1/2 z-0 h-1 -translate-y-1/2 lg:h-[6px]"
-			// 100% of the column + the grid's gap-2 (0.5rem) reaches the previous column's centre
+			className="absolute right-1/2 top-1/2 z-0 h-[4px] -translate-y-1/2 lg:h-[6px] w-[calc(100%+1.5rem)] lg:w-[calc(100%+4rem)]"
 			style={{
-				width: "calc(100% + 0.5rem)",
 				backgroundColor: STATUS_COLORS[status],
 			}}
 		/>
@@ -226,8 +209,6 @@ function TrackerConnector({ status }: { status: StepStatus }) {
 // --------------------------------------------------------
 // PAGE
 // --------------------------------------------------------
-
-const FIELD_LABEL = "text-black tracking-wide";
 
 function lookupErrorMessage(err: unknown): string {
 	if (err instanceof ApiError && err.serverMessage) return err.serverMessage;
@@ -240,14 +221,80 @@ interface LookupResult {
 	error?: string;
 }
 
+type TrackingItem = {
+	pkOrderItemId?: string;
+	orderItemId?: string;
+	productId?: string;
+	productName?: string;
+	name?: string;
+	sku?: string;
+	colorName?: string;
+	color?: string;
+	sizeLabel?: string;
+	size?: string;
+	quantity: number;
+	unitPrice?: number;
+	price?: number;
+	lineTotal?: number;
+};
+
+type UserOrderRecord = {
+	orderNumber?: string;
+	items?: TrackingItem[];
+};
+
 export default function OrderTrackingPage() {
-	// The order number lives in the URL (?order=SR-...) so a tracking link can be shared or refreshed.
 	const [searchParams, setSearchParams] = useSearchParams();
 	const reference = (searchParams.get("order") ?? "").trim();
 
 	const [searchInput, setSearchInput] = useState(reference);
 	const [result, setResult] = useState<LookupResult | null>(null);
 	const [attempt, setAttempt] = useState(0);
+	const [showItemsModal, setShowItemsModal] = useState(false);
+
+	const { user } = useAuth();
+	const [authItems, setAuthItems] = useState<TrackingItem[] | null>(null);
+	const [loadingItems, setLoadingItems] = useState(false);
+
+	const [reviewItem, setReviewItem] = useState<any | null>(null);
+
+	// Fetch authenticated user's orders so we can hydrate the items modal
+	useEffect(() => {
+		const userId = user?.pkUserId;
+		if (!userId || !reference) {
+			setAuthItems(null);
+			return;
+		}
+
+		let cancelled = false;
+		setLoadingItems(true);
+
+		apiFetch<UserOrderRecord[]>(`/Order/user/${userId}`)
+			.then((orders) => {
+				if (cancelled || !Array.isArray(orders)) return;
+				const target = reference.toUpperCase();
+				const match = orders.find(
+					(o) =>
+						(o.orderNumber ?? "").trim().toUpperCase() === target,
+				);
+				if (match?.items && Array.isArray(match.items)) {
+					setAuthItems(match.items);
+				} else {
+					setAuthItems(null);
+				}
+			})
+			.catch((err) => {
+				console.error(err);
+				if (!cancelled) setAuthItems(null);
+			})
+			.finally(() => {
+				if (!cancelled) setLoadingItems(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [user?.pkUserId, reference]);
 
 	useEffect(() => {
 		if (!reference) return;
@@ -271,7 +318,6 @@ export default function OrderTrackingPage() {
 		};
 	}, [reference, attempt]);
 
-	// Only trust a result that belongs to the order number currently in the URL.
 	const current = result && result.ref === reference ? result : null;
 	const isLoading = reference !== "" && current === null;
 	const order = current?.order ?? null;
@@ -281,7 +327,7 @@ export default function OrderTrackingPage() {
 		const next = searchInput.trim().toUpperCase();
 		if (!next || isLoading) return;
 		setResult(null);
-		setAttempt((n) => n + 1); // lets "search again" re-run even for the same number
+		setAttempt((n) => n + 1);
 		setSearchParams({ order: next });
 	};
 
@@ -292,7 +338,7 @@ export default function OrderTrackingPage() {
 	};
 
 	// --------------------------------------------------------
-	// VIEW 1: SEARCH PAGE (also shows loading / not found / error)
+	// VIEW 1: SEARCH PAGE
 	// --------------------------------------------------------
 	if (!order) {
 		const notice = isLoading
@@ -305,7 +351,6 @@ export default function OrderTrackingPage() {
 
 		return (
 			<div className="relative h-[calc(100vh-var(--nav-h,64px))] w-full bg-[#111] flex flex-col items-center justify-center font-display overflow-hidden">
-				{/* Background Pattern */}
 				<img
 					src={star_bg}
 					alt="Star Background"
@@ -317,12 +362,10 @@ export default function OrderTrackingPage() {
 						Track Your Order:
 					</h1>
 
-					{/* Skewed Search Container */}
 					<form
 						onSubmit={handleSearch}
 						className="relative w-full max-w-2xl transform -skew-x-[6deg]"
 					>
-						{/* Top Right Jagged Accent */}
 						<svg
 							className="absolute -top-5 -right-5 w-12 h-12 text-white pointer-events-none z-20 drop-shadow-lg"
 							viewBox="0 0 100 100"
@@ -334,7 +377,6 @@ export default function OrderTrackingPage() {
 							<polygon points="20,100 80,100 100,20 60,60 70,0 0,50" />
 						</svg>
 
-						{/* Bottom Left Jagged Accent */}
 						<svg
 							className="absolute -bottom-5 -left-6 w-12 h-12 text-white pointer-events-none z-20 drop-shadow-lg"
 							viewBox="0 0 100 100"
@@ -346,7 +388,6 @@ export default function OrderTrackingPage() {
 							<polygon points="100,0 20,20 0,80 40,50 30,100 100,50" />
 						</svg>
 
-						{/* Input Field */}
 						<div className="relative border-2 border-white bg-[#1a1a1a] shadow-[6px_6px_0px_#000]">
 							<input
 								type="text"
@@ -376,7 +417,7 @@ export default function OrderTrackingPage() {
 	}
 
 	// --------------------------------------------------------
-	// VIEW 2: ORDER DETAILS PAGE (Non-Scrollable)
+	// VIEW 2: ORDER DETAILS PAGE
 	// --------------------------------------------------------
 	const closed = isClosedOrder(order);
 	const arrival = arrivalInfo(order);
@@ -386,160 +427,182 @@ export default function OrderTrackingPage() {
 		[order.shipTo.city, order.shipTo.province].filter(Boolean).join(", "),
 	].filter(Boolean);
 
+	const extendedOrder = order as OrderTracking & { items?: TrackingItem[] };
+	const itemsToRender =
+		(extendedOrder.items && extendedOrder.items.length > 0
+			? extendedOrder.items
+			: null) ??
+		authItems ??
+		[];
+
 	return (
-		<div className="h-[calc(100vh-var(--nav-h,64px))] w-full flex flex-col font-display bg-[#111] overflow-hidden">
-			{/* Top Section: Details Grid */}
-			<div className="w-full px-6 py-4 lg:px-16 lg:py-8 bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 shrink-0 z-10">
-				{/* Column 1: Order Info */}
-				<div className="flex flex-col">
-					<h2 className="text-lg lg:text-xl font-extrabold uppercase tracking-widest mb-1">
-						Order Tracking
-					</h2>
-					<p className="text-xs lg:text-sm font-extrabold mb-3 lg:mb-6 break-all">
-						ORDER #{order.orderNumber}
-					</p>
+		<div className="h-[calc(100vh-var(--nav-h,64px))] w-full flex flex-col font-display bg-[#111] overflow-hidden select-none">
+			{/* TOP SECTION: Light grey (#EEEEEE) matching the 2nd reference image */}
+			<div className="relative z-30 w-full bg-[#EEEEEE] px-6 pt-5 pb-3 lg:px-14 lg:pt-7 lg:pb-4 shrink-0">
+				<div className="max-w-[1600px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr_1fr_auto] gap-6 lg:gap-10 items-start">
+					{/* Column 1: Order Info */}
+					<div className="flex flex-col">
+						<h2 className="text-xl lg:text-[26px] leading-none font-black uppercase tracking-tight text-black mb-1">
+							ORDER TRACKING
+						</h2>
+						<p className="text-xs lg:text-[15px] font-black uppercase tracking-wide text-black mb-3 lg:mb-4 select-text">
+							ORDER #{order.orderNumber}
+						</p>
 
-					<div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] lg:text-xs font-extrabold">
-						<span className={FIELD_LABEL}>ORDER STATUS</span>
-						<span className="text-neutral-500">
-							{STATUS_LABEL[order.status]}
-						</span>
+						<div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-xs lg:text-[14px]">
+							<span className="font-black uppercase text-black">
+								ORDER STATUS
+							</span>
+							<span className="font-medium uppercase text-neutral-800">
+								{STATUS_LABEL[order.status]}
+							</span>
 
-						<span className={FIELD_LABEL}>ITEMS IN ORDER</span>
-						<span className="text-neutral-500">
-							{order.itemCount}
-						</span>
+							<span className="font-black uppercase text-black">
+								ITEMS IN ORDER
+							</span>
+							<span className="font-medium text-neutral-800">
+								{order.itemCount}
+							</span>
 
-						<span className={FIELD_LABEL}>{arrival.label}</span>
-						<span className="text-neutral-500">
-							{arrival.value}
-						</span>
-					</div>
-				</div>
-
-				{/* Column 2: Shipping Details */}
-				<div className="flex flex-col">
-					<h3 className="text-xs lg:text-sm font-extrabold uppercase tracking-widest mb-2 lg:mb-4">
-						Shipping Details
-					</h3>
-					<div className="text-[10px] lg:text-xs font-bold text-neutral-600 leading-relaxed">
-						{order.shipTo.name || addressLines.length ? (
-							<>
-								{order.shipTo.name && (
-									<p>{order.shipTo.name}</p>
-								)}
-								{addressLines.map((line) => (
-									<p key={line}>{line}</p>
-								))}
-							</>
-						) : (
-							<p>Address details unavailable.</p>
-						)}
-						{order.courier && (
-							<p className="mt-1">Via {order.courier}</p>
-						)}
-					</div>
-				</div>
-
-				{/* Column 3: Order Summary */}
-				<div className="flex flex-col">
-					<h3 className="text-xs lg:text-sm font-extrabold uppercase tracking-widest mb-2 lg:mb-4">
-						Order Summary
-					</h3>
-
-					<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] lg:text-xs font-extrabold border-b-2 border-black pb-2 mb-2">
-						<span className="text-black">SUBTOTAL</span>
-						<span className="text-neutral-600">
-							{formatPrice(order.subtotal)}
-						</span>
-
-						{order.discountAmount > 0 && (
-							<>
-								<span className="text-black">DISCOUNT</span>
-								<span className="text-neutral-600">
-									-{formatPrice(order.discountAmount)}
-								</span>
-							</>
-						)}
-
-						<span className="text-black">SHIPPING</span>
-						<span className="text-neutral-600">
-							{formatPrice(order.shippingFee)}
-						</span>
+							<span className="font-black uppercase text-black">
+								{arrival.label}
+							</span>
+							<span className="font-medium text-neutral-800">
+								{arrival.value}
+							</span>
+						</div>
 					</div>
 
-					<div className="grid grid-cols-2 gap-x-4 text-xs lg:text-sm font-extrabold">
-						<span className="text-black">TOTAL</span>
-						<span className="text-black">
-							{formatPrice(order.totalAmount)}
-						</span>
+					{/* Column 2: Shipping Details */}
+					<div className="flex flex-col lg:pt-6">
+						<h3 className="text-xs lg:text-[15px] font-black uppercase tracking-wide text-black mb-3 lg:mb-4">
+							SHIPPING DETAILS
+						</h3>
+						<div className="text-xs lg:text-[14px] font-normal text-neutral-800 leading-snug space-y-0.5">
+							{order.shipTo.name || addressLines.length ? (
+								<>
+									{order.shipTo.name && (
+										<p>{order.shipTo.name}</p>
+									)}
+									{addressLines.map((line) => (
+										<p key={line}>{line}</p>
+									))}
+								</>
+							) : (
+								<p>Address details unavailable.</p>
+							)}
+							{order.courier && <p>Via {order.courier}</p>}
+						</div>
 					</div>
-				</div>
 
-				{/* Column 4: Action Buttons */}
-				<div className="flex flex-col gap-2 lg:gap-3 lg:items-end lg:justify-start pt-2 lg:pt-0">
-					<button className="w-full lg:w-36 px-4 py-2 rounded-full border-2 border-black text-black font-extrabold text-[10px] lg:text-xs uppercase tracking-widest transition-all duration-200 hover:bg-black hover:text-white active:scale-95 focus:outline-none">
-						View Invoice
-					</button>
+					{/* Column 3: Order Summary */}
+					<div className="flex flex-col lg:pt-6 max-w-[240px]">
+						<h3 className="text-xs lg:text-[15px] font-black uppercase tracking-wide text-black mb-3 lg:mb-4">
+							ORDER SUMMARY
+						</h3>
 
-					{/* Returns only make sense once the parcel has arrived. */}
-					<button
-						disabled={order.status !== "Delivered"}
-						className="w-full lg:w-36 px-4 py-2 rounded-full border-2 border-[#e60000] text-[#e60000] font-extrabold text-[10px] lg:text-xs uppercase tracking-widest transition-all duration-200 hover:bg-[#e60000] hover:text-white active:scale-95 focus:outline-none disabled:opacity-40 disabled:pointer-events-none"
-					>
-						File Return
-					</button>
+						<div className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-1 text-xs lg:text-[14px]">
+							<span className="font-black uppercase text-black">
+								SUBTOTAL
+							</span>
+							<span className="font-normal text-neutral-800">
+								{formatPrice(order.subtotal)}
+							</span>
 
-					<button
-						onClick={handleReset}
-						className="w-full lg:w-36 px-4 py-2 text-black font-extrabold text-[10px] lg:text-xs uppercase tracking-widest underline underline-offset-4 hover:text-[#e60000] focus:outline-none"
-					>
-						Track Another
-					</button>
+							{order.discountAmount > 0 && (
+								<>
+									<span className="font-black uppercase text-black">
+										DISCOUNT
+									</span>
+									<span className="font-normal text-neutral-800">
+										-{formatPrice(order.discountAmount)}
+									</span>
+								</>
+							)}
+
+							<span className="font-black uppercase text-black">
+								SHIPPING
+							</span>
+							<span className="font-normal text-neutral-800">
+								{formatPrice(order.shippingFee)}
+							</span>
+
+							<span className="font-black uppercase text-black pt-3">
+								TOTAL
+							</span>
+							<span className="font-normal text-neutral-900 pt-3">
+								{formatPrice(order.totalAmount)}
+							</span>
+						</div>
+					</div>
+
+					{/* Column 4: Two Black Pill Action Buttons */}
+					<div className="flex flex-row lg:flex-col gap-2.5 lg:items-end lg:justify-start lg:pt-5">
+						<button
+							type="button"
+							onClick={() => setShowItemsModal(true)}
+							className="w-full lg:w-44 px-6 py-2 rounded-full border-[1.5px] border-black bg-white text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:bg-black hover:text-white active:scale-95 focus:outline-none whitespace-nowrap cursor-pointer"
+						>
+							View All Items
+						</button>
+
+						<button
+							type="button"
+							onClick={handleReset}
+							className="w-full lg:w-44 px-6 py-2 rounded-full border-[1.5px] border-black bg-white text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:bg-black hover:text-white active:scale-95 focus:outline-none whitespace-nowrap cursor-pointer"
+						>
+							Track Another
+						</button>
+					</div>
 				</div>
 			</div>
 
-			{/* Divider Graphic - Changed bg to white to prevent black gap, scaling adjusted to match design */}
-			<div className="w-full h-12 md:h-16 lg:h-24 bg-white shrink-0 relative z-20 overflow-hidden flex items-center justify-center">
-				<img
-					src={order_divider}
-					alt="Divider"
-					className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-[20%] w-full min-w-[1000px] lg:min-w-[1400px] h-auto pointer-events-none drop-shadow-xl"
-				/>
-			</div>
-
-			{/* Bottom Section: Tracking Info */}
-			<div className="relative flex-1 min-h-0 w-full bg-[#111] flex flex-col justify-center items-center pb-4 lg:pb-8">
-				{/* Star Background Restored to match the mockup */}
+			{/* BOTTOM SECTION: Split Background + Jagged Divider + Raised Timeline */}
+			<div className="relative flex-1 min-h-0 w-full bg-[#111] flex flex-col justify-center items-center overflow-hidden">
+				{/* Layer 0: Star Background Pattern */}
 				<img
 					src={star_bg}
-					alt="Star Background"
-					className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none"
+					alt=""
+					aria-hidden="true"
+					className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none z-0"
 				/>
 
-				<div className="relative z-10 w-full max-w-5xl mx-auto flex-1 flex flex-col items-center justify-center">
+				{/* Layer 1: Top light-grey fill behind the transparent upper half of order_divider.png so there is NEVER a black bar */}
+				<div
+					aria-hidden="true"
+					className="absolute top-0 left-0 right-0 h-14 md:h-20 lg:h-28 bg-[#EEEEEE] pointer-events-none z-[5]"
+				/>
+
+				{/* Layer 2: Overflowing Jagged Divider Graphic (z-10, below the z-20 tracker) */}
+				<img
+					src={order_divider}
+					alt=""
+					aria-hidden="true"
+					className="absolute top-0 left-1/2 -translate-x-1/2 w-[112%] min-w-[1100px] max-w-none h-auto pointer-events-none z-10"
+				/>
+
+				{/* Layer 3: Raised Timeline Graphic (z-20, above the divider) */}
+				<div className="relative z-20 w-full max-w-6xl mx-auto px-6 lg:px-12 pt-10 md:pt-14 lg:pt-20">
 					{closed ? (
-						// Cancelled / refunded orders don't follow the shipping steps.
 						<div className="text-center text-white px-6">
 							<h4 className="text-xl lg:text-3xl font-extrabold uppercase tracking-widest">
 								Order {STATUS_LABEL[order.status]}
 							</h4>
 							{closedAt(order) && (
-								<p className="mt-2 text-[10px] lg:text-xs text-neutral-400 font-bold">
+								<p className="mt-2 text-xs lg:text-sm text-neutral-400 font-bold">
 									{closedAt(order)}
 								</p>
 							)}
-							<p className="mt-3 text-[10px] lg:text-xs text-neutral-300 font-bold">
+							<p className="mt-3 text-xs lg:text-sm text-neutral-300 font-bold">
 								{order.status === "Refunded"
 									? "Your refund has been issued."
 									: "This order was cancelled and will not be shipped."}
 							</p>
 						</div>
 					) : (
-						/* Shipping Status Tracker (containers + connectors + descriptive text) */
 						<ol
 							aria-label="Shipping progress"
-							className="w-full grid grid-cols-4 gap-2 text-center shrink-0 px-2 lg:px-12 mt-auto mb-6 lg:mb-12 list-none"
+							className="w-full grid grid-cols-4 gap-6 lg:gap-16 items-start list-none"
 						>
 							{steps.map((step, index) => {
 								const art = STEP_ART[step.id];
@@ -547,7 +610,6 @@ export default function OrderTrackingPage() {
 								const status: StepStatus = isDone
 									? "completed"
 									: "pending";
-								// The tracking number is useful while the parcel is in transit, so show it then too.
 								const showNote =
 									isDone ||
 									(step.id === "in-transit" &&
@@ -563,14 +625,14 @@ export default function OrderTrackingPage() {
 										}
 										className="relative flex flex-col items-center text-white"
 									>
-										{/* Shape area: connector runs along its vertical centre, behind the container */}
-										<div className="relative w-full">
+										{/* Icon Box + Connecting Line */}
+										<div className="relative w-full flex justify-center">
 											{index > 0 && (
 												<TrackerConnector
 													status={status}
 												/>
 											)}
-											<div className="relative mx-auto aspect-square w-full max-w-[200px]">
+											<div className="relative mx-auto aspect-square w-full max-w-[140px] md:max-w-[170px] lg:max-w-[195px]">
 												<TrackerNode
 													art={art}
 													status={status}
@@ -578,35 +640,304 @@ export default function OrderTrackingPage() {
 											</div>
 										</div>
 
-										<h4 className="text-[10px] lg:text-xs font-extrabold uppercase tracking-wide mb-1">
-											{art.label}
-										</h4>
+										{/* Step Text Details (Left-aligned under the box like the 2nd image) */}
+										<div className="w-full max-w-[140px] md:max-w-[170px] lg:max-w-[195px] mt-3 lg:mt-4 text-left">
+											<h4 className="text-xs md:text-sm lg:text-lg font-black uppercase tracking-wide text-white leading-tight">
+												{art.label}
+											</h4>
 
-										{isDone && step.timestamp && (
-											<span className="text-[8px] lg:text-[10px] text-neutral-400 font-bold mb-2">
-												{step.timestamp}
-											</span>
-										)}
+											{isDone && step.timestamp ? (
+												<p className="text-[10px] lg:text-xs text-neutral-300 font-medium mt-0.5">
+													{step.timestamp}
+												</p>
+											) : (
+												<p className="text-[10px] lg:text-xs text-neutral-300 font-medium mt-0.5">
+													In progress...
+												</p>
+											)}
 
-										{!isDone && (
-											<span className="text-[8px] lg:text-[10px] text-neutral-500 font-bold mb-2 italic">
-												{step.phase === "current"
-													? "In progress..."
-													: "Waiting"}
-											</span>
-										)}
-
-										{showNote && step.description && (
-											<p className="hidden md:block text-[9px] lg:text-[10px] text-neutral-300 font-bold leading-tight max-w-[120px] break-words">
-												{step.description}
-											</p>
-										)}
+											{showNote && step.description && (
+												<p className="hidden md:block text-[10px] lg:text-xs text-neutral-200 font-normal leading-snug mt-2.5">
+													{step.description}
+												</p>
+											)}
+										</div>
 									</li>
 								);
 							})}
 						</ol>
 					)}
 				</div>
+			</div>
+
+			{/* VIEW ALL ITEMS MODAL */}
+			{showItemsModal && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-text"
+					onClick={() => setShowItemsModal(false)}
+				>
+					<div
+						className="relative w-full max-w-lg bg-[#f5f3ec] border-2 border-[#141414] shadow-[8px_8px_0_#141414] p-6 sm:p-8 font-mono text-[#141414] max-h-[82vh] flex flex-col"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between border-b-2 border-dashed border-[#141414] pb-4 mb-4 shrink-0">
+							<div>
+								<h2 className="font-display text-2xl font-black uppercase tracking-tight">
+									ORDER ITEMS
+								</h2>
+								<p className="text-xs text-neutral-600 mt-0.5">
+									ORDER #{order.orderNumber} ·{" "}
+									{order.itemCount}{" "}
+									{order.itemCount === 1 ? "ITEM" : "ITEMS"}
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => setShowItemsModal(false)}
+								className="h-8 w-8 flex items-center justify-center border border-[#141414] font-display text-xl font-black hover:bg-[#e50914] hover:text-white hover:border-[#e50914] transition-colors cursor-pointer"
+								aria-label="Close modal"
+							>
+								&times;
+							</button>
+						</div>
+
+						<div className="overflow-y-auto pr-1 space-y-4 flex-1">
+							{loadingItems ? (
+								<p className="text-sm text-neutral-600 py-6 text-center">
+									Loading order items...
+								</p>
+							) : itemsToRender.length > 0 ? (
+								itemsToRender.map((item, i) => {
+									const unitPrice =
+										item.unitPrice ?? item.price ?? 0;
+									const lineTotal =
+										item.lineTotal ??
+										unitPrice * item.quantity;
+									const variantParts = [
+										item.sizeLabel || item.size,
+									].filter(
+										(v) =>
+											v &&
+											v.toLowerCase() !== "standard" &&
+											v.toLowerCase() !== "one size",
+									);
+
+									return (
+										<div
+											key={item.pkOrderItemId ?? i}
+											className="flex items-start justify-between gap-4 border-b border-neutral-300 pb-3.5 last:border-0"
+										>
+											<div className="min-w-0">
+												<p className="font-bold uppercase text-sm text-[#141414]">
+													{item.productName ||
+														item.name}
+												</p>
+												<p className="text-xs text-neutral-600 mt-0.5">
+													{variantParts.length > 0
+														? variantParts.join(
+																" / ",
+															)
+														: "Standard"}
+												</p>
+												<p className="text-xs text-neutral-500 mt-0.5">
+													{item.quantity} &times;{" "}
+													{formatPrice(unitPrice)}
+												</p>
+											</div>
+											<div className="flex flex-col items-end gap-1">
+												<span className="font-bold text-sm whitespace-nowrap text-[#141414]">
+													{formatPrice(lineTotal)}
+												</span>
+												{order.status ===
+													"Delivered" && (
+													<button
+														type="button"
+														onClick={() =>
+															setReviewItem(item)
+														}
+														className="text-[11px] font-bold uppercase tracking-wide text-neutral-500 underline hover:text-brand-red transition-colors cursor-pointer"
+													>
+														Leave a review
+													</button>
+												)}
+											</div>
+										</div>
+									);
+								})
+							) : (
+								<div className="py-4 text-center space-y-2">
+									<p className="text-sm font-bold uppercase text-[#141414]">
+										{order.itemCount}{" "}
+										{order.itemCount === 1
+											? "Item"
+											: "Items"}{" "}
+										in this drop
+									</p>
+									<p className="text-xs text-neutral-600">
+										Sign in to the account that placed this
+										order (or update the tracking endpoint)
+										to view individual item breakdowns.
+									</p>
+								</div>
+							)}
+						</div>
+
+						<div className="mt-4 pt-4 border-t-2 border-dashed border-[#141414] space-y-1.5 text-xs shrink-0">
+							<div className="flex justify-between">
+								<span>Subtotal</span>
+								<span>{formatPrice(order.subtotal)}</span>
+							</div>
+							{order.discountAmount > 0 && (
+								<div className="flex justify-between text-[#e50914]">
+									<span>Discount</span>
+									<span>
+										-{formatPrice(order.discountAmount)}
+									</span>
+								</div>
+							)}
+							<div className="flex justify-between">
+								<span>Shipping</span>
+								<span>{formatPrice(order.shippingFee)}</span>
+							</div>
+							<div className="flex justify-between items-baseline pt-2 border-t border-neutral-300 font-display text-lg font-black uppercase">
+								<span>Total</span>
+								<span>{formatPrice(order.totalAmount)}</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+			{reviewItem && (
+				<ReviewModal
+					item={reviewItem}
+					onClose={() => setReviewItem(null)}
+				/>
+			)}
+		</div>
+	);
+}
+
+function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
+	const { user } = useAuth();
+	const [rating, setRating] = useState(5);
+	const [hoverRating, setHoverRating] = useState<number | null>(null);
+	const [body, setBody] = useState("");
+	const [submitting, setSubmitting] = useState(false);
+	const [error, setError] = useState("");
+
+	const nonSpaceCount = body.replace(/\s/g, "").length;
+
+	const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		const val = e.target.value;
+		if (val.replace(/\s/g, "").length <= 100) {
+			setBody(val);
+		}
+	};
+
+	const handleSubmit = async () => {
+		if (!user?.pkUserId) return setError("You must be logged in.");
+		
+		const resolvedProductId = item.productId || item.fkProductId || item.FkProductId;
+		const resolvedOrderItemId = item.orderItemId || item.pkOrderItemId || item.PkOrderItemId;
+
+		if (!resolvedProductId || !resolvedOrderItemId) {
+			return setError("Missing item reference IDs. Please ensure backend is returning ProductId and OrderItemId.");
+		}
+
+		setSubmitting(true);
+		setError("");
+		try {
+			await apiFetch("/Review", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					productId: resolvedProductId,
+					userId: user.pkUserId,
+					orderItemId: resolvedOrderItemId,
+					rating: rating,
+					body: body.trim(),
+				}),
+			});
+			onClose();
+		} catch (err: any) {
+			setError(err.message || "Failed to submit review.");
+			setSubmitting(false);
+		}
+	};
+
+	const displayRating = hoverRating !== null ? hoverRating : rating;
+
+	return (
+		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in">
+			<div className="w-full max-w-md bg-white p-6 shadow-[8px_8px_0_var(--color-brand-red-dark)] border-4 border-black">
+				<div className="flex items-center justify-between mb-4">
+					<h3 className="font-display text-2xl font-black uppercase tracking-tight">
+						Leave a Review
+					</h3>
+					<button
+						onClick={onClose}
+						className="hover:text-brand-red transition-colors"
+					>
+						<X size={24} strokeWidth={3} />
+					</button>
+				</div>
+
+				<p className="text-sm font-bold text-neutral-600 mb-4 truncate">
+					{item.productName}
+				</p>
+
+				{error && (
+					<p className="mb-4 text-sm font-bold text-brand-red">
+						{error}
+					</p>
+				)}
+
+				<div
+					className="mb-6 flex gap-2"
+					onMouseLeave={() => setHoverRating(null)}
+				>
+					{[1, 2, 3, 4, 5].map((sessionStar) => (
+						<div
+							key={sessionStar}
+							className="cursor-pointer transition-transform hover:scale-110"
+							onMouseEnter={() => setHoverRating(sessionStar)}
+							onClick={() => setRating(sessionStar)}
+						>
+							<Star
+								size={40}
+								strokeWidth={1.5}
+								className={
+									displayRating >= sessionStar
+										? "fill-brand-orange text-brand-orange"
+										: "text-neutral-300 fill-neutral-100"
+								}
+							/>
+						</div>
+					))}
+				</div>
+
+				<div className="relative mb-6">
+					<textarea
+						rows={4}
+						placeholder="What did you think about this item? (Optional)"
+						value={body}
+						onChange={handleBodyChange}
+						className="w-full resize-none border-2 border-black bg-neutral-50 p-3 font-medium outline-none focus:border-brand-red transition-colors"
+					/>
+					<span
+						className={`absolute bottom-3 right-3 text-xs font-bold ${nonSpaceCount >= 100 ? "text-brand-red" : "text-neutral-400"}`}
+					>
+						{nonSpaceCount} / 100
+					</span>
+				</div>
+
+				<button
+					onClick={handleSubmit}
+					disabled={submitting}
+					className="w-full bg-[#141414] py-3 font-display text-lg font-black uppercase text-white hover:bg-[#e50914] transition-colors disabled:opacity-50"
+				>
+					{submitting ? "Submitting..." : "Submit Review"}
+				</button>
 			</div>
 		</div>
 	);

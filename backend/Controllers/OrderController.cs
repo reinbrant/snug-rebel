@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -45,7 +46,9 @@ namespace backend.Controllers
             if (order.Status != OrderStatus.Shipped)
                 _context.OrderStatusHistories.Add(new OrderStatusHistory
                 {
-                    FkOrderId = orderId, Status = OrderStatus.Shipped, ChangedAt = DateTime.UtcNow,
+                    FkOrderId = orderId,
+                    Status = OrderStatus.Shipped,
+                    ChangedAt = DateTime.UtcNow,
                     ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
                     Note = "Shipment created by staff."
                 });
@@ -53,6 +56,59 @@ namespace backend.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
+
+        [HttpPut("{orderId}/status")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> UpdateOrderStatus(string orderId, [FromBody] UpdateOrderStatusRequest request)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderStatusHistories)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.FkProductVariant)
+                .FirstOrDefaultAsync(o => o.PkOrderId == orderId);
+
+            if (order == null) return NotFound();
+
+            if (!Enum.TryParse<OrderStatus>(request.Status, true, out var newStatus))
+                return BadRequest(new { message = "Invalid order status." });
+
+            if (newStatus == OrderStatus.Delivered && order.Status != OrderStatus.Delivered)
+            {
+                foreach (var item in order.OrderItems)
+                {
+                    if (item.FkProductVariant != null)
+                    {
+                        var product = await _context.Products.FindAsync(item.FkProductVariant.FkProductId);
+                        if (product != null)
+                        {
+                            product.SoldCount += item.Quantity;
+                        }
+                    }
+                }
+            }
+
+            order.Status = newStatus;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            _context.OrderStatusHistories.Add(new OrderStatusHistory
+            {
+                FkOrderId = orderId,
+                Status = newStatus,
+                ChangedAt = DateTime.UtcNow,
+                ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                Note = $"Status updated to {newStatus} by admin."
+            });
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        private bool CanAccessUser(string userId) => User.Identity?.IsAuthenticated == true &&
+            (User.FindFirstValue(ClaimTypes.NameIdentifier) == userId || User.IsInRole("Admin") || User.IsInRole("Staff"));
+
+        [HttpGet("mine")]
+        [Authorize]
+        public Task<IActionResult> GetMyOrders() => GetOrdersByUserId(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetOrdersByUserId(string userId)
@@ -64,6 +120,7 @@ namespace backend.Controllers
                     return BadRequest(new { error = "InvalidUserId", message = "The userId parameter cannot be null or empty." });
                 }
 
+                if (!CanAccessUser(userId)) return User.Identity?.IsAuthenticated == true ? Forbid() : Unauthorized();
                 var orders = await _context.Orders
                     .Include(o => o.OrderItems)
                     .Where(o => o.FkUserId == userId)
@@ -98,6 +155,8 @@ namespace backend.Controllers
                     return NotFound(new { error = "OrderNotFound", message = $"Order with ID '{orderId}' was not found." });
                 }
 
+                if (order.FkUserId == null ? !(User.IsInRole("Admin") || User.IsInRole("Staff")) : !CanAccessUser(order.FkUserId))
+                    return User.Identity?.IsAuthenticated == true ? Forbid() : Unauthorized();
                 return Ok(MapToOrderDto(order));
             }
             catch (Exception ex)
@@ -125,6 +184,7 @@ namespace backend.Controllers
                     .AsNoTracking()
                     .AsSplitQuery()
                     .Include(o => o.OrderItems)
+                        .ThenInclude(oi => oi.FkProductVariant)
                     .Include(o => o.Shipments)
                     .Include(o => o.OrderStatusHistories)
                     .Include(o => o.FkShippingAddress)
@@ -149,6 +209,13 @@ namespace backend.Controllers
             {
                 if (request == null) return BadRequest(new { error = "NullRequestBody", message = "Request body cannot be null." });
 
+                var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                string? authenticatedUserId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
+                string? normalizedSessionToken = string.IsNullOrWhiteSpace(request.SessionToken) ? null : request.SessionToken.Trim();
+                if (authenticatedUserId != null && currentUserId != authenticatedUserId)
+                    return currentUserId == null ? Unauthorized() : Forbid();
+                if (authenticatedUserId != null) normalizedSessionToken = null;
+
                 // 1. Idempotency Check
                 if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
                 {
@@ -157,14 +224,13 @@ namespace backend.Controllers
                         .FirstOrDefaultAsync(o => o.IdempotencyKey == request.IdempotencyKey.Trim());
                     if (existingOrder != null)
                     {
+                        if (existingOrder.FkUserId != null && existingOrder.FkUserId != currentUserId)
+                            return currentUserId == null ? Unauthorized() : Forbid();
                         return Ok(MapToOrderDto(existingOrder));
                     }
                 }
 
                 // 2. Proper nullable guest handling
-                string? authenticatedUserId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
-                string? normalizedSessionToken = string.IsNullOrWhiteSpace(request.SessionToken) ? null : request.SessionToken.Trim();
-
                 if (authenticatedUserId == null && normalizedSessionToken == null)
                     return BadRequest(new { error = "InvalidIdentifier", message = "A UserId or SessionToken must be provided." });
 
@@ -193,7 +259,7 @@ namespace backend.Controllers
                         .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkSize)
                         .Include(c => c.CartItems).ThenInclude(ci => ci.FkProductVariant).ThenInclude(pv => pv.FkColor)
                         .FirstOrDefaultAsync(c => (authenticatedUserId != null && c.FkUserId == authenticatedUserId) ||
-                            (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
+                            (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken && c.FkUserId == null));
                 }
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = "No active cart was found." });
                 if (!cart.CartItems.Any()) return BadRequest(new { error = "EmptyCart", message = "Cannot place an order because the cart is empty." });
@@ -216,6 +282,9 @@ namespace backend.Controllers
 
                 // 5. Resolve Shipping Address
                 string shippingAddressId = request.ShippingAddressId ?? string.Empty;
+                if (!string.IsNullOrEmpty(shippingAddressId) && (authenticatedUserId == null ||
+                    !await _context.Addresses.AnyAsync(a => a.PkAddressId == shippingAddressId && a.FkUserId == authenticatedUserId)))
+                    return BadRequest(new { message = "Choose an address belonging to your account." });
                 if (string.IsNullOrEmpty(shippingAddressId))
                 {
                     var newAddress = new Address
@@ -315,7 +384,7 @@ namespace backend.Controllers
                     foreach (var cartItem in cart.CartItems)
                     {
                         var variant = cartItem.FkProductVariant;
-                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.BasePrice;
+                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.SalePrice ?? variant.FkProduct.BasePrice;
 
                         // Atomic Stock Decrement via ExecuteUpdateAsync
                         var affected = await _context.ProductVariants
@@ -469,7 +538,18 @@ namespace backend.Controllers
                     City = CleanText(address?.City),
                     Province = CleanText(address?.Province)
                 },
-                Events = events
+                Events = events,
+                Items = order.OrderItems.Select(oi => new OrderTrackingItemDTO
+                {
+                    OrderItemId = oi.PkOrderItemId,
+                    ProductId = oi.FkProductVariant != null ? oi.FkProductVariant.FkProductId : string.Empty,
+                    ProductName = oi.ProductName,
+                    SizeLabel = oi.SizeLabel,
+                    ColorName = oi.ColorName,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice,
+                    LineTotal = oi.LineTotal
+                }).ToList()
             };
         }
 

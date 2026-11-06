@@ -11,7 +11,6 @@ import {
 import {
   Activity,
   Download,
-  Layers3,
   LogOut,
   MoonStar,
   Package,
@@ -85,7 +84,6 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/products', label: 'Products', icon: Package },
   { to: '/categories', label: 'Categories', icon: Tag },
-  { to: '/collections', label: 'Collections', icon: Layers3 },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/customers', label: 'Customers', icon: Users },
 ]
@@ -155,7 +153,6 @@ function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/collections" element={<CollectionsPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/customers" element={<CustomersPage />} />
         </Route>
@@ -440,7 +437,7 @@ function ProductsPage() {
   const [sizes, setSizes] = useState<{ id: number; name: string }[]>([])
   const emptyForm = () => ({
     displayId: '', slug: '', name: '', category: '', categoryId: categories[0]?.id || '',
-    description: '', material: '', price: '1499', isActive: true, hasSizes: false, hasColors: false,
+    description: '', material: '', price: '1499', salePrice: '', badge: 'none', isActive: true, hasSizes: false, hasColors: false,
     images: [] as Array<{ url: string; altText?: string }>, variants: [createVariantTemplate()],
   })
   const [form, setForm] = useState(emptyForm)
@@ -459,7 +456,7 @@ function ProductsPage() {
     return {
       id: p.pkProductId, displayId: p.displayId, slug: p.slug, name: p.productName,
       category: cats.find(c => c.id === p.fkCategoryId)?.name || 'Unknown', categoryId: p.fkCategoryId,
-      description: p.description || '', price: p.basePrice, material: p.material || '',
+      description: p.description || '', price: p.basePrice, salePrice: p.salePrice, badge: p.badge, material: p.material || '',
       stock: (p.productVariants ?? []).reduce((sum: number, v: any) => sum + v.stockQuantity, 0),
       isActive: p.isActive, status: p.isActive ? 'Active' : 'Inactive', sku: p.displayId,
       hasSizes: p.hasSizes, hasColors: p.hasColors,
@@ -499,7 +496,7 @@ function ProductsPage() {
         method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           displayId: form.displayId || null, slug: form.slug, productName: form.name, fkCategoryId: form.categoryId,
-          description: form.description, basePrice: Number(form.price), material: form.material, isActive: form.isActive,
+          description: form.description, basePrice: Number(form.price), salePrice: form.salePrice ? Number(form.salePrice) : null, badge: form.badge === 'none' ? null : form.badge, material: form.material, isActive: form.isActive,
           hasSizes: form.hasSizes, hasColors: form.hasColors, images: form.images,
           variants: form.variants.map(v => ({
             id: v.id.startsWith('var-') ? null : v.id, sku: v.sku,
@@ -528,7 +525,7 @@ function ProductsPage() {
     setForm({
       displayId: product.displayId || '', slug: product.slug, name: product.name, category: product.category,
       categoryId: product.categoryId || '', description: product.description || '', material: product.material || '',
-      price: String(product.price), isActive: product.isActive, hasSizes: product.hasSizes, hasColors: product.hasColors,
+      price: String(product.price), salePrice: product.salePrice ? String(product.salePrice) : '', badge: product.badge || 'none', isActive: product.isActive, hasSizes: product.hasSizes, hasColors: product.hasColors,
       images: product.images, variants: product.variants.length ? product.variants.map(v => createVariantTemplate(v)) : [createVariantTemplate()],
     })
     setIsProductModalOpen(true)
@@ -636,6 +633,15 @@ function ProductsPage() {
               <label><span>Material</span><input value={form.material} onChange={(e) => handleChange('material', e.target.value)} /></label>
               <label className="full-span"><span>Description</span><textarea value={form.description} onChange={(e) => handleChange('description', e.target.value)} rows={3} /></label>
               <label><span>Base price</span><input type="number" min="0" step="0.01" required value={form.price} onChange={(e) => handleChange('price', e.target.value)} /></label>
+              <label><span>Sale price (optional)</span><input type="number" min="0" step="0.01" value={form.salePrice} onChange={(e) => handleChange('salePrice', e.target.value)} /></label>
+              <label>
+                <span>Badge (optional)</span>
+                <select value={form.badge} onChange={(e) => handleChange('badge', e.target.value)}>
+                  <option value="none">None</option>
+                  <option value="new">New</option>
+                  <option value="sale">On Sale</option>
+                </select>
+              </label>
               <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={(e) => handleChange('isActive', e.target.checked)} /></label>
 
               <ProductImagesEditor images={form.images} onChange={images => handleChange('images', images)} onBusyChange={setUploadingImage} />
@@ -692,84 +698,79 @@ function ProductsPage() {
   )
 }
 
-function CategoriesPage() { return <CatalogSetupPage kind="Category" /> }
-function CollectionsPage() { return <CatalogSetupPage kind="Collection" /> }
-
-function CatalogSetupPage({ kind }: { kind: 'Category' | 'Collection' }) {
+function CategoriesPage() {
   const [items, setItems] = useState<any[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const blank = { name: '', slug: '', description: '', isActive: true, launchDate: '' }
+  const blank = { name: '', slug: '', description: '', isActive: true }
   const [form, setForm] = useState(blank)
-  const isCategory = kind === 'Category'
-  const title = isCategory ? 'Categories' : 'Collections'
-  const nameKey = isCategory ? 'categoryName' : 'collectionName'
-  const idKey = isCategory ? 'pkCategoryId' : 'pkCollectionId'
 
   useEffect(() => {
-    requestJson(`/api/${kind}`).then(setItems).catch(e => setError(e.message))
-  }, [kind])
+    requestJson('/api/Category').then(setItems).catch(e => setError(e.message))
+  }, [])
 
   async function save(event: React.FormEvent) {
     event.preventDefault(); setError(''); setSaving(true)
     try {
-      const item = await requestJson(`/api/${kind}${editing ? `/${editing}` : ''}`, {
+      const item = await requestJson(`/api/Category${editing ? `/${editing}` : ''}`, {
         method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [nameKey]: form.name, slug: form.slug, description: form.description,
-          isActive: form.isActive, ...(isCategory ? {} : { launchDate: form.launchDate || null }) }),
+        body: JSON.stringify({ categoryName: form.name, slug: form.slug, description: form.description,
+          isActive: form.isActive }),
       })
-      setItems(current => [item, ...current.filter(i => i[idKey] !== item[idKey])]); setOpen(false)
+      setItems(current => [item, ...current.filter(i => i.pkCategoryId !== item.pkCategoryId)]); setOpen(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save.') }
     finally { setSaving(false) }
   }
 
   async function remove(item: any) {
-    if (!window.confirm(`Delete ${item[nameKey]}?`)) return
+    if (!window.confirm(`Delete ${item.categoryName}?`)) return
     try {
-      await requestJson(`/api/${kind}/${item[idKey]}`, { method: 'DELETE' })
-      setItems(current => current.filter(i => i[idKey] !== item[idKey]))
+      await requestJson(`/api/Category/${item.pkCategoryId}`, { method: 'DELETE' })
+      setItems(current => current.filter(i => i.pkCategoryId !== item.pkCategoryId))
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete.') }
   }
 
   return <div className="page-stack">
-    <section className="page-header"><div><p className="eyebrow">Catalog setup</p><h2>{title}</h2></div>
-      <button className="primary-button small-button" onClick={() => { setForm(blank); setEditing(null); setError(''); setOpen(true) }}>Add {kind.toLowerCase()}</button>
+    <section className="page-header"><div><p className="eyebrow">Catalog setup</p><h2>Categories</h2></div>
+      <button className="primary-button small-button" onClick={() => { setForm(blank); setEditing(null); setError(''); setOpen(true) }}>Add category</button>
     </section>
     {error && <p className="error-banner" role="alert">{error}</p>}
     {open && <form className="panel-card product-form-grid" onSubmit={save}>
-      <label><span>Name</span><input required maxLength={isCategory ? 100 : 120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-      <label><span>Slug (optional)</span><input maxLength={isCategory ? 120 : 140} value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} /></label>
+      <label><span>Name</span><input required maxLength={100} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+      <label><span>Slug (optional)</span><input maxLength={120} value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} /></label>
       <label><span>Description</span><textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
-      {!isCategory && <label><span>Launch date</span><input type="date" value={form.launchDate} onChange={e => setForm({ ...form, launchDate: e.target.value })} /></label>}
       <label><span>Active</span><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /></label>
       <div className="page-actions"><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button></div>
     </form>}
     <section className="panel-card"><div className="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Slug</th>{!isCategory && <th>Launch</th>}<th>Status</th><th>Actions</th></tr></thead>
-      <tbody>{items.map(item => <tr key={item[idKey]}>
-        <td>{item[nameKey]}</td><td>{item.slug}</td>{!isCategory && <td>{item.launchDate || 'N/A'}</td>}
+      <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>{items.map(item => <tr key={item.pkCategoryId}>
+        <td>{item.categoryName}</td><td>{item.slug}</td>
         <td>{item.isActive ? 'Active' : 'Hidden'}</td>
         <td><button className="link-button" onClick={() => {
-          setEditing(item[idKey]); setForm({ name: item[nameKey], slug: item.slug, description: item.description || '', isActive: item.isActive, launchDate: item.launchDate || '' }); setOpen(true); setError('')
+          setEditing(item.pkCategoryId); setForm({ name: item.categoryName, slug: item.slug, description: item.description || '', isActive: item.isActive }); setOpen(true); setError('')
         }}>Edit</button><button className="link-button danger" onClick={() => void remove(item)}>Delete</button></td>
       </tr>)}</tbody>
-    </table>{items.length === 0 && <p>No {title.toLowerCase()} found.</p>}</div></section>
+    </table>{items.length === 0 && <p>No categories found.</p>}</div></section>
   </div>
 }
 
 function OrdersPage() {
-  const [orders, setOrders] = useState<OrderItem[]>([])
-  const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null)
+  const [orders, setOrders] = useState<any[]>([])
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
+  const [newStatus, setNewStatus] = useState('')
+  const [savingStatus, setSavingStatus] = useState(false)
   const [shipment, setShipment] = useState({ courier: '', trackingNumber: '' })
   const [savingShipment, setSavingShipment] = useState(false)
-
   const [error, setError] = useState('')
+
   useEffect(() => {
     requestJson('/api/Order').then(data => setOrders(data.map((o: any) => ({
       orderId: o.pkOrderId, id: o.orderNumber, customer: o.contactEmail || o.fkUserId || 'Guest', total: o.totalAmount,
-      status: o.status, date: new Date(o.placedAt).toLocaleDateString(), channel: 'Web',
+      status: o.status, courier: o.courier || 'None', trackingNumber: o.trackingNumber || 'N/A',
+      date: new Date(o.placedAt).toLocaleDateString(),
       items: (o.items ?? []).map((i: any) => ({ name: `${i.productName} (${i.sku})`, qty: i.quantity, price: i.unitPrice })),
     })))).catch(e => setError(e.message))
   }, [])
@@ -783,12 +784,12 @@ function OrdersPage() {
       <section className="panel-card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Courier</th><th>Amount</th><th>Status</th></tr></thead>
             <tbody>
               {orders.map((order) => (
-                <tr key={order.id} className="row-clickable" onClick={() => { setSelectedOrder(order); setShipment({ courier: '', trackingNumber: '' }); setError('') }}>
-                  <td>{order.id}</td><td>{order.customer}</td><td>{formatMoney(order.total)}</td>
-                  <td><span className={`status-pill ${order.status === 'Paid' ? 'success' : 'warning'}`}>{order.status}</span></td>
+                <tr key={order.id} className="row-clickable" onClick={() => { setSelectedOrder(order); setNewStatus(order.status); setShipment({ courier: order.courier !== 'None' ? order.courier : '', trackingNumber: order.trackingNumber !== 'N/A' ? order.trackingNumber : '' }); setError('') }}>
+                  <td>{order.id}</td><td>{order.customer}</td><td>{order.courier}</td><td>{formatMoney(order.total)}</td>
+                  <td><span className={`status-pill ${order.status === 'Paid' || order.status === 'Shipped' || order.status === 'Delivered' ? 'success' : 'warning'}`}>{order.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -803,22 +804,52 @@ function OrdersPage() {
               <button className="icon-button" onClick={() => setSelectedOrder(null)}>×</button>
             </div>
             {error && <p className="error-banner" role="alert">{error}</p>}
-            <p>Status: {selectedOrder.status}</p>
-            {!['Delivered', 'Cancelled', 'Refunded'].includes(selectedOrder.status) && <form className="product-form-grid" onSubmit={async event => {
+            
+            <div className="order-modal-grid">
+              <div className="order-detail-block">
+                <div className="detail-list">
+                  <div><label>Customer</label><span>{selectedOrder.customer}</span></div>
+                  <div><label>Courier</label><span>{selectedOrder.courier}</span></div>
+                  <div><label>Tracking Number</label><span>{selectedOrder.trackingNumber}</span></div>
+                </div>
+              </div>
+              <div className="order-detail-block">
+                <label><span>Update Status</span></label>
+                <div className="flex gap-2 mt-2">
+                  <select aria-label="Order Status" value={newStatus} onChange={e => setNewStatus(e.target.value)} className="w-full">
+                    {['Pending', 'Paid', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <button type="button" className="primary-button small-button" disabled={savingStatus} onClick={async () => {
+                    setSavingStatus(true); setError('')
+                    try {
+                      await requestJson(`/api/Order/${selectedOrder.orderId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) })
+                      setSelectedOrder((c: any) => c ? { ...c, status: newStatus } : c)
+                      setOrders((c: any[]) => c.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: newStatus } : o))
+                    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update status.') }
+                    finally { setSavingStatus(false) }
+                  }}>{savingStatus ? 'Saving…' : 'Update'}</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-items-header"><h4>Shipment details</h4></div>
+            <form className="product-form-grid mb-4" onSubmit={async event => {
               event.preventDefault(); setSavingShipment(true); setError('')
               try {
                 await requestJson(`/api/Order/${selectedOrder.orderId}/shipment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(shipment) })
-                setSelectedOrder(current => current ? { ...current, status: 'Shipped' } : current)
-                setOrders(current => current.map(o => o.id === selectedOrder.id ? { ...o, status: 'Shipped' } : o))
+                setSelectedOrder((current: any) => current ? { ...current, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : current)
+                setOrders((current: any[]) => current.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : o))
               } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save shipment.') }
               finally { setSavingShipment(false) }
             }}>
-              <label><span>Courier</span><input required maxLength={100} value={shipment.courier} onChange={e => setShipment({ ...shipment, courier: e.target.value })} /></label>
-              <label><span>Tracking number</span><input required maxLength={100} value={shipment.trackingNumber} onChange={e => setShipment({ ...shipment, trackingNumber: e.target.value })} /></label>
-              <button className="primary-button" disabled={savingShipment}>{savingShipment ? 'Saving…' : 'Save shipment'}</button>
-            </form>}
+              <label><span>Courier Name</span><input required maxLength={100} value={shipment.courier} onChange={e => setShipment({ ...shipment, courier: e.target.value })} /></label>
+              <label><span>Tracking Number</span><input required maxLength={100} value={shipment.trackingNumber} onChange={e => setShipment({ ...shipment, trackingNumber: e.target.value })} /></label>
+              <button className="primary-button full-span">Save shipment</button>
+            </form>
+
+            <div className="order-items-header"><h4>Items</h4></div>
             <div className="order-items-list">
-              {(selectedOrder.items ?? []).map((item) => (
+              {(selectedOrder.items ?? []).map((item: any) => (
                 <div key={item.name} className="order-item-row">
                   <div><strong>{item.name}</strong><span>Qty {item.qty}</span></div>
                   <span>{formatMoney(item.price)}</span>

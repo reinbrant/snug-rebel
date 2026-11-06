@@ -54,11 +54,36 @@ export default function Shop() {
 		setSearchParams(next ? { filter: next } : {});
 
 	const products = useMemo(() => {
-		const filtered = category
-			? productsData.filter((p) => p.categories.includes(category))
+		const normalizedCategory = category?.trim().toLowerCase() ?? null;
+
+		const filtered = normalizedCategory
+			? normalizedCategory === "best-selling"
+				? productsData.some((p) => p.soldCount > 0)
+					? productsData.filter(
+							(p) =>
+								p.soldCount > 0 ||
+								p.categories.some(
+									(c) => c.toLowerCase() === "best-selling",
+								),
+						)
+					: productsData
+				: productsData.filter((p) =>
+						p.categories.some(
+							(c) =>
+								c.trim().toLowerCase() === normalizedCategory,
+						),
+					)
 			: productsData;
 
-		return [...filtered].sort(SORTERS[sort]);
+		const activeSort: SortKey =
+			normalizedCategory === "best-selling" && sort === "best-selling"
+				? "best-selling"
+				: sort;
+
+		return [...filtered].sort((a, b) => {
+			const primary = SORTERS[activeSort](a, b);
+			return primary !== 0 ? primary : a.name.localeCompare(b.name);
+		});
 	}, [productsData, sort, category]);
 
 	const { addItem, openCart } = useCart();

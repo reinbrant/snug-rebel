@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileText, Image as ImageIcon, Upload, X } from 'lucide-react'
 import type { Product3DModelItem } from '../types'
 import { uploadProductModel, type StagedModel } from '../lib/models3d'
+import { Model3DPreview } from './Model3DPreview'
 import '../Model3d.css'
 
 const MAX_MODEL_MB = 50
@@ -31,9 +32,19 @@ export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, o
   const [previewFile, setPreviewFile] = useState<File | null>(null)
   const [modelName, setModelName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [localModelUrl, setLocalModelUrl] = useState('')
 
   const modelInputRef = useRef<HTMLInputElement>(null)
   const previewInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    return () => { if (localModelUrl) URL.revokeObjectURL(localModelUrl) }
+  }, [localModelUrl])
+
+  function clearModelFile() {
+    setModelFile(null)
+    setLocalModelUrl('')
+  }
 
   // In staged mode, tell the parent what is currently selected.
   useEffect(() => {
@@ -50,6 +61,7 @@ export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, o
     if (!isGlb(file)) return fail('The 3D model must be a .glb file.')
     if (toMb(file.size) > MAX_MODEL_MB) return fail(`The model is too large. The limit is ${MAX_MODEL_MB} MB.`)
     setError(null)
+    setLocalModelUrl(URL.createObjectURL(file))
     setModelFile(file)
   }
 
@@ -96,7 +108,7 @@ export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, o
     setError(null)
     try {
       const result = await uploadProductModel(productId, { modelFile, previewFile, modelName })
-      setModelFile(null)
+      clearModelFile()
       setPreviewFile(null)
       setModelName('')
       onUploadSuccess?.(result)
@@ -147,7 +159,7 @@ export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, o
                   <small>{toMb(modelFile.size).toFixed(2)} MB</small>
                 </div>
               </div>
-              <button type="button" className="icon-button" aria-label="Remove model file" onClick={() => setModelFile(null)}>
+              <button type="button" className="icon-button" aria-label="Remove model file" onClick={clearModelFile}>
                 <X size={16} />
               </button>
             </div>
@@ -167,6 +179,10 @@ export function Model3DUpload({ productId, stagedOnly = false, onStagedChange, o
               </button>
             </div>
           ) : null}
+
+          {modelFile && localModelUrl && (
+            <Model3DPreview src={localModelUrl} name={modelFile.name} />
+          )}
 
           <input
             type="text"

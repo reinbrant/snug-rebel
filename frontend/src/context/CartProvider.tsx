@@ -20,6 +20,7 @@ import {
 } from "../api/cart";
 import { getSessionToken } from "../api/session";
 import { CartContext, type CartContextValue } from "./cartContext";
+import { useAuth } from './authContext';
 
 const messageOf = (e: unknown) =>
 	e instanceof ApiError
@@ -30,19 +31,21 @@ const messageOf = (e: unknown) =>
 
 /** Holds the cart for the whole app. Wrap it around the router (see App.tsx). */
 export function CartProvider({ children }: { children: ReactNode }) {
+    const auth = useAuth();
 	const [cart, setCart] = useState<Cart>(EMPTY_CART);
 	const [status, setStatus] = useState<CartContextValue["status"]>("loading");
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(0);
 	const [isOpen, setIsOpen] = useState(false);
 
-	// Guests own their cart through a session token. When login exists, switch this to { userId }.
+    const userId = auth.user?.pkUserId;
 	const owner = useMemo<CartOwner>(
-		() => ({ sessionToken: getSessionToken() }),
-		[],
+		() => userId ? { userId } : { sessionToken: getSessionToken() },
+		[userId],
 	);
 
 	const refresh = useCallback(async () => {
+		if (auth.status === 'loading' || auth.status === 'error') return;
 		try {
 			setCart(await fetchCart(owner));
 			setStatus("ready");
@@ -51,7 +54,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 			setStatus("error");
 			setError(messageOf(e));
 		}
-	}, [owner]);
+	}, [owner, auth.status]);
 
 	useEffect(() => {
 		// eslint-disable-next-line react-hooks/set-state-in-effect
@@ -87,7 +90,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
 			),
 			status,
 			error,
-			busy: pending > 0,
+			busy: pending > 0 || auth.status === 'loading' || auth.status === 'error',
+			owner,
 
 			isOpen,
 			openCart: () => setIsOpen(true),
@@ -118,7 +122,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 			refresh,
 			dismissError: () => setError(null),
 		}),
-		[cart, status, error, pending, isOpen, owner, run, refresh],
+		[cart, status, error, pending, isOpen, owner, run, refresh, auth.status],
 	);
 
 	return (

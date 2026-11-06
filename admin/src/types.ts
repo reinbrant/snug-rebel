@@ -46,6 +46,8 @@ export type ProductItem = {
   categoryId?: string
   description?: string
   price: number
+  salePrice?: number | null
+  badge?: string | null
   material?: string
   stock: number
   isActive: boolean
@@ -64,14 +66,6 @@ export type CategoryItem = {
   slug: string
   products: number
   status: 'Active' | 'Hidden'
-}
-
-export type CollectionItem = {
-  id: string
-  name: string
-  products: number
-  status: 'Live' | 'Scheduled'
-  launch: string
 }
 
 export type OrderStatus = 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Refunded'

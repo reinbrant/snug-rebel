@@ -16,10 +16,13 @@ public partial class Product
     public decimal AvgRating { get; set; }
     public int ReviewCount { get; set; }
     public int SoldCount { get; set; }
+    public decimal? SalePrice { get; set; }
+    public string? Badge { get; set; }
     public string? Material { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
 
     [JsonIgnore]
     public virtual Category FkCategory { get; set; } = null!;

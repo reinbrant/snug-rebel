@@ -1,5 +1,6 @@
 import { ApiError, apiFetch, resolveAssetUrl } from './api'
 import { EMPTY_CART, type Cart, type CartOwner, type CartTarget, type VariantChange } from './cart.types'
+import { getSessionToken } from './session'
 
 type CartItemDTO = {
     pkCartItemId: string
@@ -61,6 +62,7 @@ export async function addToCart(owner: CartOwner, target: CartTarget, quantity =
 export async function updateCartItem(cartItemId: string, quantity: number): Promise<void> {
     await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, {
         method: 'PUT',
+        headers: { 'X-Cart-Session': getSessionToken() },
         body: JSON.stringify({ quantity }),
     })
 }
@@ -68,14 +70,15 @@ export async function updateCartItem(cartItemId: string, quantity: number): Prom
 export async function changeCartItemVariant(cartItemId: string, change: VariantChange): Promise<void> {
     await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, {
         method: 'PUT',
+        headers: { 'X-Cart-Session': getSessionToken() },
         body: JSON.stringify({ size: change.size ?? null, color: change.color ?? null }),
     })
 }
 
 export async function removeCartItem(cartItemId: string): Promise<void> {
-    await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, { method: 'DELETE' })
+    await apiFetch(`/Cart/item/${encodeURIComponent(cartItemId)}`, { method: 'DELETE', headers: { 'X-Cart-Session': getSessionToken() } })
 }
 
 export async function clearCart(cartId: string): Promise<void> {
-    await apiFetch(`/Cart/${encodeURIComponent(cartId)}/clear`, { method: 'DELETE' })
+    await apiFetch(`/Cart/${encodeURIComponent(cartId)}/clear`, { method: 'DELETE', headers: { 'X-Cart-Session': getSessionToken() } })
 }

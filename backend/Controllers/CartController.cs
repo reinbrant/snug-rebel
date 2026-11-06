@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
@@ -16,6 +17,14 @@ namespace backend.Controllers
         {
             _context = context;
         }
+
+        private bool CanAccessUser(string userId) => User.Identity?.IsAuthenticated == true &&
+            (User.FindFirstValue(ClaimTypes.NameIdentifier) == userId || User.IsInRole("Admin") || User.IsInRole("Staff"));
+
+        private bool CanAccessCart(Cart cart) => cart.FkUserId != null ? CanAccessUser(cart.FkUserId) :
+            !string.IsNullOrWhiteSpace(cart.SessionToken) && Request.Headers["X-Cart-Session"] == cart.SessionToken;
+
+        private IActionResult Denied() => User.Identity?.IsAuthenticated == true ? Forbid() : Unauthorized();
 
         private IQueryable<Cart> QueryCartWithDetails()
         {
@@ -40,6 +49,7 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "InvalidUserId", message = "The userId parameter cannot be null or empty." });
 
+                if (!CanAccessUser(userId)) return Denied();
                 var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.FkUserId == userId);
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = $"No active cart found for User ID '{userId}'." });
 
@@ -59,7 +69,7 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(sessionToken)) return BadRequest(new { error = "InvalidSessionToken", message = "The sessionToken parameter cannot be null or empty." });
 
-                var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.SessionToken == sessionToken);
+                var cart = await QueryCartWithDetails().FirstOrDefaultAsync(c => c.SessionToken == sessionToken && c.FkUserId == null);
                 if (cart == null) return NotFound(new { error = "CartNotFound", message = $"No active cart found for Session Token '{sessionToken}'." });
 
                 return Ok(MapToCartDto(cart));
@@ -84,6 +94,11 @@ namespace backend.Controllers
                 if (normalizedUserId == null && normalizedSessionToken == null)
                     return BadRequest(new { error = "MissingCartIdentifier", message = "At least one owner identifier must be provided." });
 
+                if (normalizedUserId != null && !CanAccessUser(normalizedUserId)) return Denied();
+                if (normalizedUserId != null && normalizedSessionToken != null)
+                    return BadRequest(new { message = "Provide one bag owner." });
+                if (normalizedSessionToken?.Length > 100) return BadRequest(new { message = "Invalid session token." });
+
                 var itemsToAdd = request.Items ?? new List<CartItemRequest>();
                 if (!string.IsNullOrWhiteSpace(request.ProductVariantId) || !string.IsNullOrWhiteSpace(request.ProductId))
                 {
@@ -104,7 +119,7 @@ namespace backend.Controllers
 
                 var cart = await _context.Carts
                     .Include(c => c.CartItems)
-                    .FirstOrDefaultAsync(c => (normalizedUserId != null && c.FkUserId == normalizedUserId) || (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken));
+                    .FirstOrDefaultAsync(c => (normalizedUserId != null && c.FkUserId == normalizedUserId) || (normalizedSessionToken != null && c.SessionToken == normalizedSessionToken && c.FkUserId == null));
 
                 if (cart == null)
                 {
@@ -200,6 +215,8 @@ namespace backend.Controllers
                     .FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
 
+                var owningCart = await _context.Carts.FindAsync(cartItem.FkCartId);
+                if (owningCart == null || !CanAccessCart(owningCart)) return Denied();
                 var cartId = cartItem.FkCartId;
 
                 if (request.Quantity is <= 0)
@@ -284,6 +301,8 @@ namespace backend.Controllers
                 var cartItem = await _context.CartItems.FirstOrDefaultAsync(ci => ci.PkCartItemId == cartItemId);
                 if (cartItem == null) return NotFound(new { error = "CartItemNotFound", message = $"Cart item '{cartItemId}' was not found." });
 
+                var owningCart = await _context.Carts.FindAsync(cartItem.FkCartId);
+                if (owningCart == null || !CanAccessCart(owningCart)) return Denied();
                 var cartId = cartItem.FkCartId;
 
                 _context.CartItems.Remove(cartItem);
@@ -306,9 +325,10 @@ namespace backend.Controllers
             {
                 if (string.IsNullOrWhiteSpace(cartId)) return BadRequest(new { error = "InvalidCartId", message = "The cartId cannot be null or empty." });
 
-                var cartExists = await _context.Carts.AnyAsync(c => c.PkCartId == cartId);
-                if (!cartExists) return NotFound(new { error = "CartNotFound", message = $"Cart with ID '{cartId}' does not exist." });
+                var cart = await _context.Carts.FindAsync(cartId);
+                if (cart == null) return NotFound(new { error = "CartNotFound", message = $"Cart with ID '{cartId}' does not exist." });
 
+                if (!CanAccessCart(cart)) return Denied();
                 var cartItems = await _context.CartItems.Where(ci => ci.FkCartId == cartId).ToListAsync();
                 if (!cartItems.Any()) return Ok(new { message = $"Cart '{cartId}' is already empty." });
 
@@ -347,7 +367,7 @@ namespace backend.Controllers
                         ProductId = p?.PkProductId ?? string.Empty,
                         ProductName = p?.ProductName ?? "Item",
                         ImageUrl = img,
-                        UnitPrice = v?.PriceOverride ?? p?.BasePrice ?? 0m,
+                        UnitPrice = v?.PriceOverride ?? p?.SalePrice ?? p?.BasePrice ?? 0m,
                         ColorName = v?.FkColor?.Name,
                         SizeLabel = v?.FkSize?.Label,
                         StockQuantity = v?.StockQuantity ?? 99

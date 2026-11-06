@@ -3,10 +3,13 @@ export const ROUTES = {
   shop: '/shop',
   about: '/about',
   tracking: '/tracking',
-  checkout: '/checkout'
+  checkout: '/checkout',
+  signIn: '/sign-in',
+  signUp: '/sign-up',
+  account: '/account'
 } as const
 
-export type Page = keyof typeof ROUTES
+export type Page = keyof typeof ROUTES;
 
 /** Main nav links, in display order. Add a page here (and in ROUTES) and it shows up in the bar. */
 export const NAV_LINKS: { page: Page; label: string }[] = [
@@ -24,7 +27,7 @@ export const itemPath = (itemId: string) => `${ROUTES.shop}/${encodeURIComponent
 
 /** Which nav page a URL belongs to (so /shop/tops still highlights Shop). null = none. */
 export function pageFromPath(pathname: string): Page | null {
-  const pages = Object.keys(ROUTES) as Page[]
+  const pages = Object.keys(ROUTES) as Page[];
   const match = pages.find((page) => {
     const path = ROUTES[page]
     if (path === '/') return pathname === '/'
