@@ -27,7 +27,7 @@ import { ProductImagesEditor } from './components/ProductImagesEditor'
 import { Model3DList } from './components/Model3DList'
 import { Model3DUpload } from './components/Model3DUpload'
 import { uploadProductModel, type StagedModel } from './lib/models3d'
-import type { OrderItem, ProductItem, SessionUser } from './types'
+import type { ProductItem, SessionUser } from './types'
 
 const STORAGE_KEY = 'snug-rebel-admin-session'
 const THEME_KEY = 'snug-rebel-admin-theme'
@@ -834,17 +834,28 @@ function OrdersPage() {
 
             <div className="order-items-header"><h4>Shipment details</h4></div>
             <form className="product-form-grid mb-4" onSubmit={async event => {
-              event.preventDefault(); setSavingShipment(true); setError('')
+              event.preventDefault(); 
+              setSavingShipment(true); 
+              setError('');
               try {
-                await requestJson(`/api/Order/${selectedOrder.orderId}/shipment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(shipment) })
-                setSelectedOrder((current: any) => current ? { ...current, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : current)
-                setOrders((current: any[]) => current.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : o))
-              } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save shipment.') }
-              finally { setSavingShipment(false) }
+                await requestJson(`/api/Order/${selectedOrder.orderId}/shipment`, { 
+                  method: 'PUT', 
+                  headers: { 'Content-Type': 'application/json' }, 
+                  body: JSON.stringify(shipment) 
+                });
+                setSelectedOrder((current: any) => current ? { ...current, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : current);
+                setOrders((current: any[]) => current.map(o => o.orderId === selectedOrder.orderId ? { ...o, status: 'Shipped', courier: shipment.courier, trackingNumber: shipment.trackingNumber } : o));
+              } catch (e) { 
+                setError(e instanceof Error ? e.message : 'Unable to save shipment.'); 
+              } finally { 
+                setSavingShipment(false); 
+              }
             }}>
               <label><span>Courier Name</span><input required maxLength={100} value={shipment.courier} onChange={e => setShipment({ ...shipment, courier: e.target.value })} /></label>
               <label><span>Tracking Number</span><input required maxLength={100} value={shipment.trackingNumber} onChange={e => setShipment({ ...shipment, trackingNumber: e.target.value })} /></label>
-              <button className="primary-button full-span">Save shipment</button>
+              <button type="submit" className="primary-button full-span" disabled={savingShipment}>
+                {savingShipment ? 'Saving shipment...' : 'Save shipment'}
+              </button>
             </form>
 
             <div className="order-items-header"><h4>Items</h4></div>
