@@ -57,3 +57,6 @@ dotnet build backend/backend.csproj
 ```
 
 Regression checks use synthetic data and do not access Neon.
+
+For a dashboard demonstration with reversible SQL data, see
+[the analytics demo instructions](backend/SQL/ANALYTICS_DEMO.md).
