@@ -46,6 +46,8 @@ export type ProductItem = {
   categoryId?: string
   description?: string
   price: number
+  salePrice?: number | null
+  badge?: string | null
   material?: string
   stock: number
   isActive: boolean

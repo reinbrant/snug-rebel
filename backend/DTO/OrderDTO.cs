@@ -78,4 +78,6 @@ namespace backend.DTO
         public int Quantity { get; set; }
         public decimal LineTotal { get; set; }
     }
+
+    public record UpdateOrderStatusRequest(string Status);
 }

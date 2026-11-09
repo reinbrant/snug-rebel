@@ -1,18 +1,29 @@
-import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
-import { authErrorMessage } from '../api/auth'
+import { useState, type FormEvent } from "react";
+import {
+	Link,
+	Navigate,
+	useLocation,
+	useNavigate,
+	useSearchParams,
+} from "react-router";
+import { authErrorMessage } from "../api/auth";
 import { ApiError } from '../api/api'
 import VerificationEmailForm from '../components/VerificationEmailForm'
 import EmailCodeSignIn from '../components/EmailCodeSignIn'
-import { useAuth } from '../context/authContext'
-import { ROUTES } from '../routes'
-import '../styles/Account.css'
+import { useAuth } from "../context/authContext";
+import { ROUTES } from "../routes";
+import snugrebel_logo_black from "../assets/snugrebel_logo_black.svg";
+import sign_up_img from "../assets/sign_up_img.jpg";
 
 function safeReturnTo(value: string | null): string {
-  if (!value?.startsWith('/') || value.startsWith('//')) return ROUTES.account
-  const url = new URL(value, window.location.origin)
-  return url.origin === window.location.origin && url.pathname !== ROUTES.signIn && url.pathname !== ROUTES.signUp
-    ? `${url.pathname}${url.search}${url.hash}` : ROUTES.account
+	if (!value?.startsWith("/") || value.startsWith("//"))
+		return ROUTES.account;
+	const url = new URL(value, window.location.origin);
+	return url.origin === window.location.origin &&
+		url.pathname !== ROUTES.signIn &&
+		url.pathname !== ROUTES.signUp
+		? `${url.pathname}${url.search}${url.hash}`
+		: ROUTES.account;
 }
 
 export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {

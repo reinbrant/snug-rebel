@@ -379,10 +379,24 @@ function CheckoutForm() {
 				values: { ...values, cashReadyOption: cashLabel },
 			});
 
+			// Safely extend the types to bypass ESLint "any" and missing property errors
+			confirmed.items = confirmed.items.map((ci) => {
+				const variantId = (ci as CartLine & { fkProductVariantId?: string }).fkProductVariantId ?? ci.id;
+				
+				const cartRef = checkoutItems.find((item) => 
+					item.id === variantId || (item as CartLine & { productVariantId?: string }).productVariantId === variantId
+				);
+				
+				return { ...ci, imageUrl: cartRef?.imageUrl ?? null } as CartLine;
+			});
+
 			setConfirmedOrder(confirmed);
+            
+			// Restore the clear() call so the cart empties upon success!
 			if (!buyNowItems) {
 				await clear();
 			}
+
 			window.scrollTo({ top: 0, behavior: "smooth" });
 		} catch (err) {
 			setSubmitError(
@@ -428,7 +442,7 @@ function CheckoutForm() {
 							</p>
 						</div>
 
-						<div className="relative w-72 sm:w-80 lg:w-[26vw] lg:max-w-[30rem] shrink-0 select-none self-start md:self-auto [container-type:inline-size]">
+						<div className="relative w-72 sm:w-80 lg:w-[26vw] lg:max-w-[30rem] shrink-0 self-start md:self-auto [container-type:inline-size]">
 							<img
 								src={orderNoContainerSvg}
 								alt="Order Number Container"
@@ -475,7 +489,6 @@ function CheckoutForm() {
 															{item.name}
 														</p>
 														<p className="text-neutral-600 text-xs">
-															{item.color} /{" "}
 															{item.size}
 														</p>
 													</div>
@@ -1401,7 +1414,6 @@ function CheckoutForm() {
 															{item.name}
 														</p>
 														<p className="text-neutral-600 text-sm">
-															{item.color} /{" "}
 															{item.size}
 														</p>
 													</div>

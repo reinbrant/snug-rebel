@@ -1,9 +1,17 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
 import { Link } from "react-router";
 import AddToCartButton from "./AddToCartButton";
 import ItemCardBadge, { type ItemBadgeVariant } from "./ItemCardBadge";
 import PillButton from "../ui/PillButton";
 import { formatCount, formatPrice } from "../../helpers/priceFormat";
+
+const FALLBACK_THUMBNAIL =
+	"data:image/svg+xml," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#7a7a7a"/></svg>',
+	);
 
 type ShopItemCardProps = {
 	imageSrc: string;
@@ -13,18 +21,11 @@ type ShopItemCardProps = {
 	rating: number;
 	reviewCount: number;
 	soldCount: number;
-	/** Units left. Shown as a "5 remaining" tag on the image when the badge is "lowStock". */
 	stockLeft?: number;
-	/**
-	 * Badge on the image. Defaults to "sale" when `salePrice` is set, otherwise "none".
-	 * "outOfStock" also disables the buttons.
-	 */
 	badge?: ItemBadgeVariant;
 	onBuyNow?: () => void;
 	onAddToCart?: () => void;
-	/** Item page URL. When set, the image and the name link to it. */
 	href?: string;
-	/** Sizing/positioning from the parent, e.g. "w-52". The card fills its container by default. */
 	className?: string;
 };
 
@@ -43,23 +44,37 @@ export default function ShopItemCard({
 	href,
 	className = "",
 }: ShopItemCardProps) {
+	const [currentImgSrc, setCurrentImgSrc] = useState(
+		imageSrc?.trim() ? imageSrc : FALLBACK_THUMBNAIL,
+	);
+
+	useEffect(() => {
+		setCurrentImgSrc(imageSrc?.trim() ? imageSrc : FALLBACK_THUMBNAIL);
+	}, [imageSrc]);
+
 	const isOnSale = salePrice != null && salePrice < price;
 	const discountPercent = isOnSale
 		? Math.round(((price - salePrice) / price) * 100)
 		: 0;
-	const badgeVariant: ItemBadgeVariant =
-		badge ?? (isOnSale ? "sale" : "none");
+	let badgeVariant: ItemBadgeVariant = "none";
+	if (stockLeft !== undefined && stockLeft <= 0) {
+		badgeVariant = "outOfStock";
+	} else if (badge) {
+		badgeVariant = badge; // prioritizes 'new' if passed from parent
+	} else if (isOnSale) {
+		badgeVariant = "sale";
+	} else if (stockLeft !== undefined && stockLeft < 15) {
+		badgeVariant = "lowStock";
+	}
 	const isUnavailable = badgeVariant === "outOfStock";
 	const showStockTag = badgeVariant === "lowStock" && stockLeft !== undefined;
 
 	return (
 		<article className={["group relative w-full", className].join(" ")}>
-			{/* Card background. Starts partway down the image, grows up to wrap it on hover. */}
 			<div
 				aria-hidden="true"
 				className="absolute inset-x-0 bottom-0 top-14 transition-[top] duration-200 group-hover:-top-3 motion-reduce:transition-none"
 			>
-				{/* Black plate that tilts out from behind the card on hover */}
 				<div className="absolute inset-0 origin-center bg-black opacity-0 transition duration-200 group-hover:rotate-2 group-hover:opacity-100 motion-reduce:transition-none" />
 				<div className="absolute inset-0 bg-white shadow-[0_3px_8px_rgba(0,0,0,0.25)]" />
 			</div>
@@ -67,9 +82,10 @@ export default function ShopItemCard({
 			<div className="relative px-3 pb-3">
 				<div className="relative aspect-square overflow-hidden bg-neutral-500">
 					<img
-						src={imageSrc}
+						src={currentImgSrc}
 						alt={name}
-						className="size-full object-cover"
+						onError={() => setCurrentImgSrc(FALLBACK_THUMBNAIL)}
+						className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
 						loading="lazy"
 					/>
 					<ItemCardBadge
@@ -165,21 +181,3 @@ export default function ShopItemCard({
 		</article>
 	);
 }
-
-/*
-Usage:
-
-<ShopItemCard
-    className="w-52"
-    imageSrc="/items/shirt.jpg"
-    name="Item name"
-    price={500}
-    salePrice={250}
-    rating={5}
-    reviewCount={10}
-    soldCount={20}
-    badge="sale"            // optional: 'new' | 'sale' | 'lowStock' | 'outOfStock' | 'none'
-    onBuyNow={() => {}}
-    onAddToCart={() => {}}
-/>
-*/

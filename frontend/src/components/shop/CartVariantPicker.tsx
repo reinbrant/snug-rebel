@@ -61,7 +61,7 @@ export default function CartVariantPicker({
 	const panelRef = useRef<HTMLDivElement>(null);
 	const panelId = useId();
 
-	const label = [line.color, line.size].filter(Boolean).join(", ");
+	const label = [line.size].filter(s => s && s.toLowerCase() !== "one size" && s.toLowerCase() !== "standard").join(", ") || "No options";
 
 	const close = useCallback((returnFocus = false) => {
 		setOpen(false);
@@ -181,7 +181,7 @@ export default function CartVariantPicker({
 	const sizes = item?.sizes ?? [];
 	const colors = item?.colors ?? [];
 	const showSizes = sizes.length > 1;
-	const showColors = colors.length > 1;
+	const showColors = false;
 
 	return (
 		<>

@@ -46,11 +46,59 @@ namespace backend.Controllers
             if (order.Status != OrderStatus.Shipped)
                 _context.OrderStatusHistories.Add(new OrderStatusHistory
                 {
-                    FkOrderId = orderId, Status = OrderStatus.Shipped, ChangedAt = DateTime.UtcNow,
+                    FkOrderId = orderId,
+                    Status = OrderStatus.Shipped,
+                    ChangedAt = DateTime.UtcNow,
                     ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
                     Note = "Shipment created by staff."
                 });
             order.Status = OrderStatus.Shipped; order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpPut("{orderId}/status")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> UpdateOrderStatus(string orderId, [FromBody] UpdateOrderStatusRequest request)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderStatusHistories)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.FkProductVariant)
+                .FirstOrDefaultAsync(o => o.PkOrderId == orderId);
+
+            if (order == null) return NotFound();
+
+            if (!Enum.TryParse<OrderStatus>(request.Status, true, out var newStatus))
+                return BadRequest(new { message = "Invalid order status." });
+
+            if (newStatus == OrderStatus.Delivered && order.Status != OrderStatus.Delivered)
+            {
+                foreach (var item in order.OrderItems)
+                {
+                    if (item.FkProductVariant != null)
+                    {
+                        var product = await _context.Products.FindAsync(item.FkProductVariant.FkProductId);
+                        if (product != null)
+                        {
+                            product.SoldCount += item.Quantity;
+                        }
+                    }
+                }
+            }
+
+            order.Status = newStatus;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            _context.OrderStatusHistories.Add(new OrderStatusHistory
+            {
+                FkOrderId = orderId,
+                Status = newStatus,
+                ChangedAt = DateTime.UtcNow,
+                ChangedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                Note = $"Status updated to {newStatus} by admin."
+            });
+
             await _context.SaveChangesAsync();
             return NoContent();
         }
@@ -136,6 +184,7 @@ namespace backend.Controllers
                     .AsNoTracking()
                     .AsSplitQuery()
                     .Include(o => o.OrderItems)
+                        .ThenInclude(oi => oi.FkProductVariant)
                     .Include(o => o.Shipments)
                     .Include(o => o.OrderStatusHistories)
                     .Include(o => o.FkShippingAddress)
@@ -335,7 +384,7 @@ namespace backend.Controllers
                     foreach (var cartItem in cart.CartItems)
                     {
                         var variant = cartItem.FkProductVariant;
-                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.BasePrice;
+                        var unitPrice = variant.PriceOverride ?? variant.FkProduct.SalePrice ?? variant.FkProduct.BasePrice;
 
                         // Atomic Stock Decrement via ExecuteUpdateAsync
                         var affected = await _context.ProductVariants
@@ -489,7 +538,18 @@ namespace backend.Controllers
                     City = CleanText(address?.City),
                     Province = CleanText(address?.Province)
                 },
-                Events = events
+                Events = events,
+                Items = order.OrderItems.Select(oi => new OrderTrackingItemDTO
+                {
+                    OrderItemId = oi.PkOrderItemId,
+                    ProductId = oi.FkProductVariant != null ? oi.FkProductVariant.FkProductId : string.Empty,
+                    ProductName = oi.ProductName,
+                    SizeLabel = oi.SizeLabel,
+                    ColorName = oi.ColorName,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice,
+                    LineTotal = oi.LineTotal
+                }).ToList()
             };
         }
 
