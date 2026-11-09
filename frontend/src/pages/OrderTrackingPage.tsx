@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router";
-import { Package, PackageCheck, ReceiptText, Truck } from "lucide-react";
+import {
+	Package,
+	PackageCheck,
+	ReceiptText,
+	Truck,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Star, X } from "lucide-react";
 import star_bg from "../assets/star_bg.jpg";
@@ -26,7 +31,6 @@ import type { StepId } from "../helpers/orderTimeline";
 // SHIPPING TRACKER: TYPES, CONFIG & ARTWORK
 // --------------------------------------------------------
 
-/** 'completed' renders RED, 'pending' (not done yet / in progress) renders YELLOW. */
 type StepStatus = "completed" | "pending";
 
 interface TrackerStepArt {
@@ -128,7 +132,6 @@ function TrackerShape({
 	color: string;
 }) {
 	const { width, height, fillPath, strokePath, decorations } = shape;
-
 	return (
 		<svg
 			viewBox={`0 0 ${width} ${height}`}
@@ -199,16 +202,10 @@ function TrackerConnector({ status }: { status: StepStatus }) {
 		<span
 			aria-hidden="true"
 			className="absolute right-1/2 top-1/2 z-0 h-[4px] -translate-y-1/2 lg:h-[6px] w-[calc(100%+1.5rem)] lg:w-[calc(100%+4rem)]"
-			style={{
-				backgroundColor: STATUS_COLORS[status],
-			}}
+			style={{ backgroundColor: STATUS_COLORS[status] }}
 		/>
 	);
 }
-
-// --------------------------------------------------------
-// PAGE
-// --------------------------------------------------------
 
 function lookupErrorMessage(err: unknown): string {
 	if (err instanceof ApiError && err.serverMessage) return err.serverMessage;
@@ -238,11 +235,6 @@ type TrackingItem = {
 	lineTotal?: number;
 };
 
-type UserOrderRecord = {
-	orderNumber?: string;
-	items?: TrackingItem[];
-};
-
 export default function OrderTrackingPage() {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const reference = (searchParams.get("order") ?? "").trim();
@@ -255,10 +247,8 @@ export default function OrderTrackingPage() {
 	const { user } = useAuth();
 	const [authItems, setAuthItems] = useState<TrackingItem[] | null>(null);
 	const [loadingItems, setLoadingItems] = useState(false);
-
 	const [reviewItem, setReviewItem] = useState<any | null>(null);
 
-	// Fetch authenticated user's orders so we can hydrate the items modal
 	useEffect(() => {
 		const userId = user?.pkUserId;
 		if (!userId || !reference) {
@@ -269,7 +259,7 @@ export default function OrderTrackingPage() {
 		let cancelled = false;
 		setLoadingItems(true);
 
-		apiFetch<UserOrderRecord[]>(`/Order/user/${userId}`)
+		apiFetch<any[]>(`/Order/user/${userId}`)
 			.then((orders) => {
 				if (cancelled || !Array.isArray(orders)) return;
 				const target = reference.toUpperCase();
@@ -337,9 +327,6 @@ export default function OrderTrackingPage() {
 		setSearchParams({});
 	};
 
-	// --------------------------------------------------------
-	// VIEW 1: SEARCH PAGE
-	// --------------------------------------------------------
 	if (!order) {
 		const notice = isLoading
 			? "Looking up your order..."
@@ -372,23 +359,20 @@ export default function OrderTrackingPage() {
 							fill="currentColor"
 							stroke="black"
 							strokeWidth="4"
-							strokeLinejoin="miter"
 						>
 							<polygon points="20,100 80,100 100,20 60,60 70,0 0,50" />
 						</svg>
-
 						<svg
 							className="absolute -bottom-5 -left-6 w-12 h-12 text-white pointer-events-none z-20 drop-shadow-lg"
 							viewBox="0 0 100 100"
 							fill="currentColor"
 							stroke="black"
 							strokeWidth="4"
-							strokeLinejoin="miter"
 						>
 							<polygon points="100,0 20,20 0,80 40,50 30,100 100,50" />
 						</svg>
 
-						<div className="relative border-2 border-white bg-[#1a1a1a] shadow-[6px_6px_0px_#000]">
+						<div className="relative border-2 border-white bg-[#1a1a1a] shadow-[6px_6px_0px_#000] flex items-stretch">
 							<input
 								type="text"
 								value={searchInput}
@@ -397,17 +381,24 @@ export default function OrderTrackingPage() {
 								aria-label="Order number"
 								aria-invalid={!isLoading && !!current}
 								placeholder="Enter your Order ID... (e.g. SR-261013-4821)"
-								className="w-full bg-transparent text-white px-6 py-4 md:py-5 outline-none font-bold placeholder-neutral-500 tracking-wider text-sm md:text-base transform skew-x-[6deg] disabled:opacity-60"
+								className="flex-1 bg-transparent text-white px-6 py-4 md:py-5 outline-none font-bold placeholder-neutral-500 tracking-wider text-sm md:text-base transform skew-x-[6deg] disabled:opacity-60 min-w-0"
 							/>
+							<button
+								type="submit"
+								disabled={isLoading}
+								className="px-6 md:px-8 bg-white text-black font-extrabold uppercase tracking-widest hover:bg-[#e50914] hover:text-white transition-colors cursor-pointer border-l-2 border-white"
+							>
+								<span className="inline-block transform skew-x-[6deg]">
+									Track
+								</span>
+							</button>
 						</div>
 					</form>
 
 					<p
 						role="status"
 						aria-live="polite"
-						className={`mt-8 min-h-5 text-center text-xs md:text-sm font-bold tracking-wide ${
-							isLoading ? "text-neutral-400" : "text-[#FFC633]"
-						}`}
+						className={`mt-8 min-h-5 text-center text-xs md:text-sm font-bold tracking-wide ${isLoading ? "text-neutral-400" : "text-[#FFC633]"}`}
 					>
 						{notice}
 					</p>
@@ -416,9 +407,6 @@ export default function OrderTrackingPage() {
 		);
 	}
 
-	// --------------------------------------------------------
-	// VIEW 2: ORDER DETAILS PAGE
-	// --------------------------------------------------------
 	const closed = isClosedOrder(order);
 	const arrival = arrivalInfo(order);
 	const steps = buildStepStates(order);
@@ -437,10 +425,8 @@ export default function OrderTrackingPage() {
 
 	return (
 		<div className="h-[calc(100vh-var(--nav-h,64px))] w-full flex flex-col font-display bg-[#111] overflow-hidden select-none">
-			{/* TOP SECTION: Light grey (#EEEEEE) matching the 2nd reference image */}
 			<div className="relative z-30 w-full bg-[#EEEEEE] px-6 pt-5 pb-3 lg:px-14 lg:pt-7 lg:pb-4 shrink-0">
 				<div className="max-w-[1600px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr_1fr_auto] gap-6 lg:gap-10 items-start">
-					{/* Column 1: Order Info */}
 					<div className="flex flex-col">
 						<h2 className="text-xl lg:text-[26px] leading-none font-black uppercase tracking-tight text-black mb-1">
 							ORDER TRACKING
@@ -456,14 +442,12 @@ export default function OrderTrackingPage() {
 							<span className="font-medium uppercase text-neutral-800">
 								{STATUS_LABEL[order.status]}
 							</span>
-
 							<span className="font-black uppercase text-black">
 								ITEMS IN ORDER
 							</span>
 							<span className="font-medium text-neutral-800">
 								{order.itemCount}
 							</span>
-
 							<span className="font-black uppercase text-black">
 								{arrival.label}
 							</span>
@@ -473,7 +457,6 @@ export default function OrderTrackingPage() {
 						</div>
 					</div>
 
-					{/* Column 2: Shipping Details */}
 					<div className="flex flex-col lg:pt-6">
 						<h3 className="text-xs lg:text-[15px] font-black uppercase tracking-wide text-black mb-3 lg:mb-4">
 							SHIPPING DETAILS
@@ -495,7 +478,6 @@ export default function OrderTrackingPage() {
 						</div>
 					</div>
 
-					{/* Column 3: Order Summary */}
 					<div className="flex flex-col lg:pt-6 max-w-[240px]">
 						<h3 className="text-xs lg:text-[15px] font-black uppercase tracking-wide text-black mb-3 lg:mb-4">
 							ORDER SUMMARY
@@ -536,7 +518,6 @@ export default function OrderTrackingPage() {
 						</div>
 					</div>
 
-					{/* Column 4: Two Black Pill Action Buttons */}
 					<div className="flex flex-row lg:flex-col gap-2.5 lg:items-end lg:justify-start lg:pt-5">
 						<button
 							type="button"
@@ -557,23 +538,17 @@ export default function OrderTrackingPage() {
 				</div>
 			</div>
 
-			{/* BOTTOM SECTION: Split Background + Jagged Divider + Raised Timeline */}
 			<div className="relative flex-1 min-h-0 w-full bg-[#111] flex flex-col justify-center items-center overflow-hidden">
-				{/* Layer 0: Star Background Pattern */}
 				<img
 					src={star_bg}
 					alt=""
 					aria-hidden="true"
 					className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none z-0"
 				/>
-
-				{/* Layer 1: Top light-grey fill behind the transparent upper half of order_divider.png so there is NEVER a black bar */}
 				<div
 					aria-hidden="true"
 					className="absolute top-0 left-0 right-0 h-14 md:h-20 lg:h-28 bg-[#EEEEEE] pointer-events-none z-[5]"
 				/>
-
-				{/* Layer 2: Overflowing Jagged Divider Graphic (z-10, below the z-20 tracker) */}
 				<img
 					src={order_divider}
 					alt=""
@@ -581,7 +556,6 @@ export default function OrderTrackingPage() {
 					className="absolute top-0 left-1/2 -translate-x-1/2 w-[112%] min-w-[1100px] max-w-none h-auto pointer-events-none z-10"
 				/>
 
-				{/* Layer 3: Raised Timeline Graphic (z-20, above the divider) */}
 				<div className="relative z-20 w-full max-w-6xl mx-auto px-6 lg:px-12 pt-10 md:pt-14 lg:pt-20">
 					{closed ? (
 						<div className="text-center text-white px-6">
@@ -625,7 +599,6 @@ export default function OrderTrackingPage() {
 										}
 										className="relative flex flex-col items-center text-white"
 									>
-										{/* Icon Box + Connecting Line */}
 										<div className="relative w-full flex justify-center">
 											{index > 0 && (
 												<TrackerConnector
@@ -640,12 +613,10 @@ export default function OrderTrackingPage() {
 											</div>
 										</div>
 
-										{/* Step Text Details (Left-aligned under the box like the 2nd image) */}
 										<div className="w-full max-w-[140px] md:max-w-[170px] lg:max-w-[195px] mt-3 lg:mt-4 text-left">
 											<h4 className="text-xs md:text-sm lg:text-lg font-black uppercase tracking-wide text-white leading-tight">
 												{art.label}
 											</h4>
-
 											{isDone && step.timestamp ? (
 												<p className="text-[10px] lg:text-xs text-neutral-300 font-medium mt-0.5">
 													{step.timestamp}
@@ -655,7 +626,6 @@ export default function OrderTrackingPage() {
 													In progress...
 												</p>
 											)}
-
 											{showNote && step.description && (
 												<p className="hidden md:block text-[10px] lg:text-xs text-neutral-200 font-normal leading-snug mt-2.5">
 													{step.description}
@@ -670,7 +640,6 @@ export default function OrderTrackingPage() {
 				</div>
 			</div>
 
-			{/* VIEW ALL ITEMS MODAL */}
 			{showItemsModal && (
 				<div
 					className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-text"
@@ -829,20 +798,26 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 
 	const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 		const val = e.target.value;
-		if (val.replace(/\s/g, "").length <= 100) {
-			setBody(val);
-		}
+		if (val.replace(/\s/g, "").length <= 100) setBody(val);
 	};
 
 	const handleSubmit = async () => {
 		if (!user?.pkUserId) return setError("You must be logged in.");
-		
-		const resolvedProductId = item.productId || item.fkProductId || item.FkProductId;
-		const resolvedOrderItemId = item.orderItemId || item.pkOrderItemId || item.PkOrderItemId;
 
-		if (!resolvedProductId || !resolvedOrderItemId) {
-			return setError("Missing item reference IDs. Please ensure backend is returning ProductId and OrderItemId.");
-		}
+		const resolvedProductId =
+			item.productId || 
+			item.ProductId || 
+			item.fkProductId || 
+			item.FkProductId;
+		const resolvedOrderItemId =
+			item.orderItemId || 
+			item.OrderItemId || 
+			item.pkOrderItemId || 
+			item.PkOrderItemId || 
+			item.id;
+
+		if (!resolvedProductId || !resolvedOrderItemId)
+			return setError("Missing item reference IDs.");
 
 		setSubmitting(true);
 		setError("");
@@ -876,7 +851,7 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 					</h3>
 					<button
 						onClick={onClose}
-						className="hover:text-brand-red transition-colors"
+						className="hover:text-brand-red transition-colors cursor-pointer"
 					>
 						<X size={24} strokeWidth={3} />
 					</button>
@@ -897,9 +872,11 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 					onMouseLeave={() => setHoverRating(null)}
 				>
 					{[1, 2, 3, 4, 5].map((sessionStar) => (
-						<div
+						// FIXED: Changed this from a div to a button to ensure React captures the onClick perfectly.
+						<button
+							type="button"
 							key={sessionStar}
-							className="cursor-pointer transition-transform hover:scale-110"
+							className="cursor-pointer transition-transform hover:scale-110 bg-transparent border-none p-0 outline-none"
 							onMouseEnter={() => setHoverRating(sessionStar)}
 							onClick={() => setRating(sessionStar)}
 						>
@@ -912,7 +889,7 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 										: "text-neutral-300 fill-neutral-100"
 								}
 							/>
-						</div>
+						</button>
 					))}
 				</div>
 
@@ -934,7 +911,7 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 				<button
 					onClick={handleSubmit}
 					disabled={submitting}
-					className="w-full bg-[#141414] py-3 font-display text-lg font-black uppercase text-white hover:bg-[#e50914] transition-colors disabled:opacity-50"
+					className="w-full bg-[#141414] py-3 font-display text-lg font-black uppercase text-white hover:bg-[#e50914] transition-colors disabled:opacity-50 cursor-pointer"
 				>
 					{submitting ? "Submitting..." : "Submit Review"}
 				</button>

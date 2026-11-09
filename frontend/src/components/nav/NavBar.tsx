@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Menu, Search, ShoppingBag, User, X } from "lucide-react";
 import logo from "../../assets/snugrebel_logo_white.svg";
@@ -25,7 +26,7 @@ const LINK_GAP = "gap-8";
 
 const slide = (hidden: boolean) =>
 	[
-		"transition-transform duration-300 ease-out motion-reduce:transition-none",
+		"transition-[transform,box-shadow] duration-300 ease-out motion-reduce:transition-none",
 		hidden ? "translate-y-(--nav-hide-shift)" : "translate-y-0",
 	].join(" ");
 
@@ -35,7 +36,7 @@ export default function NavBar({
 	onShopFilter,
 	onUtilityChange,
 	cartOpen,
-	cartCount,
+	cartCount = 0,
 	accountLabel = "Account",
 	accountActive = false,
 	searchActive = false,
@@ -46,11 +47,27 @@ export default function NavBar({
 	const [keyboardFocus, setKeyboardFocus] = useState(false);
 	const [activeUtility, setActiveUtility] = useState<Utility | null>(null);
 
-	// Add hover reveal state
+	const [isBouncing, setIsBouncing] = useState(false);
 	const [mouseHoverReveal, setMouseHoverReveal] = useState(false);
 
-	// Reconfigured: the bar is hidden only if all these conditions are true.
-	// If the user's mouse is near the top edge, it pops out.
+	// FIXED: Keep the NavBar's local utility state in sync with the global cart state!
+	// This prevents the "double click to open" bug after closing the drawer from the inside.
+	useEffect(() => {
+		if (cartOpen && activeUtility !== "cart") {
+			setActiveUtility("cart");
+		} else if (cartOpen === false && activeUtility === "cart") {
+			setActiveUtility(null);
+		}
+	}, [cartOpen, activeUtility]);
+
+	useEffect(() => {
+		if (cartCount > 0) {
+			setIsBouncing(true);
+			const timer = setTimeout(() => setIsBouncing(false), 300);
+			return () => clearTimeout(timer);
+		}
+	}, [cartCount]);
+
 	const hidden =
 		scrolledAway &&
 		!shopMenuOpen &&
@@ -95,7 +112,7 @@ export default function NavBar({
 
 	return (
 		<>
-			{/* Hover Target: Hidden edge at the absolute top. Hovering makes the Nav drop down. */}
+			{/* Hover Target */}
 			<div
 				className="fixed inset-x-0 top-0 h-4 z-[60]"
 				onMouseEnter={() => setMouseHoverReveal(true)}
@@ -116,7 +133,6 @@ export default function NavBar({
 			>
 				<RoughFilter />
 
-				{/* white bar background */}
 				<div
 					aria-hidden="true"
 					className={[
@@ -150,7 +166,6 @@ export default function NavBar({
 						/>
 					</a>
 
-					{/* Primary links */}
 					<ul
 						id="primary-navigation"
 						className={[
@@ -188,7 +203,6 @@ export default function NavBar({
 						))}
 					</ul>
 
-					{/* Utilities */}
 					<div className="flex items-center justify-self-end">
 						<div className="lg:hidden">
 							<NavIconButton
@@ -223,10 +237,13 @@ export default function NavBar({
 						<div
 							className={[
 								"pointer-events-auto relative flex size-16 items-center justify-center rounded-full bg-white",
-								"transition-[translate,box-shadow] duration-300 ease-out motion-reduce:transition-none",
+								"transition-[translate,box-shadow,transform] duration-300 ease-out motion-reduce:transition-none",
 								hidden
 									? "translate-x-(--cart-dock-x) shadow-[0_2px_0_rgba(0,0,0,0.2)] translate-y-4"
 									: "translate-x-0 shadow-none",
+								isBouncing
+									? "scale-110 -translate-y-1"
+									: "scale-100",
 							].join(" ")}
 						>
 							<NavIconButton
@@ -239,7 +256,7 @@ export default function NavBar({
 								active={cartOpen ?? activeUtility === "cart"}
 								onClick={() => toggleUtility("cart")}
 							/>
-							{!!cartCount && cartCount > 0 && (
+							{cartCount > 0 && (
 								<span
 									aria-hidden="true"
 									className="pointer-events-none absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-red px-1 font-display text-[11px] font-black leading-none text-white"

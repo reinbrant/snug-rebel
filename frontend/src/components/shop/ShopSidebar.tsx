@@ -203,7 +203,7 @@ export default function ShopSidebar({
 							<div className="my-1 ml-2 h-px w-full max-w-[180px] bg-neutral-800/80" />
 
 							<ShopFilterButton
-								label="🔥 ON SALE"
+								label="ON SALE"
 								style={{ minHeight: "32px" }}
 								className="scale-[0.80] origin-left text-brand-red font-extrabold py-0"
 								selected={showSaleOnly}

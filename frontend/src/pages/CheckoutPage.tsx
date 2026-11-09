@@ -1,5 +1,11 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+	useEffect,
+	useMemo,
+	useState,
+	useRef,
+	type CSSProperties,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import checkoutHeaderSvg from "../assets/checkout_page_header.svg";
 import redStarGraphicSvg from "../assets/checkout_redstar_graphic.svg";
@@ -7,7 +13,7 @@ import orderNoContainerSvg from "../assets/checkout_orderno_container.svg";
 import AngledButton from "../components/ui/AngledButton";
 import { useCart } from "../context/cartContext";
 import type { CartLine } from "../api/cart.types";
-import { useAuth } from '../context/authContext';
+import { useAuth } from "../context/authContext";
 import {
 	fetchBarangaysByCity,
 	fetchCitiesByProvince,
@@ -26,7 +32,8 @@ import { submitCheckoutOrder, validateVoucherCode } from "../api/checkout";
 import { formatPrice } from "../helpers/priceFormat";
 import { ROUTES } from "../routes";
 
-type ValidationErrors = Partial<Record<keyof CheckoutFormValues, string>>;
+type ExtendedFormValues = CheckoutFormValues & { customerNote: string };
+type ValidationErrors = Partial<Record<keyof ExtendedFormValues, string>>;
 
 const SHIPPING_DISCOUNT = 60;
 
@@ -71,22 +78,37 @@ function formatDeliveryRange(
 }
 
 export default function CheckoutPage() {
-    const { status } = useAuth();
-    if (status === 'loading') return <div className="p-8 font-display" role="status">Checking your session…</div>;
-    if (status === 'error') return <p className="p-8 font-display">Reconnect to continue checking out.</p>;
-    return <CheckoutForm />;
+	const { status } = useAuth();
+	if (status === "loading")
+		return (
+			<div className="p-8 font-display" role="status">
+				Checking your session…
+			</div>
+		);
+	if (status === "error")
+		return (
+			<p className="p-8 font-display">
+				Reconnect to continue checking out.
+			</p>
+		);
+	return <CheckoutForm />;
 }
 
 function CheckoutForm() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { lines, subtotal: cartSubtotal, openCart, clear, owner, busy: cartBusy } = useCart();
-    const { user } = useAuth();
+	const {
+		lines,
+		subtotal: cartSubtotal,
+		openCart,
+		clear,
+		owner,
+		busy: cartBusy,
+	} = useCart();
+	const { user } = useAuth();
 
-	// Support "Buy Now" single-item checkout via router state
 	const buyNowItems = (location.state as { buyNowItems?: CartLine[] } | null)
 		?.buyNowItems;
-
 	const checkoutItems: CartLine[] = buyNowItems ?? lines;
 	const activeSubtotal: number = buyNowItems
 		? buyNowItems.reduce(
@@ -96,7 +118,11 @@ function CheckoutForm() {
 			)
 		: cartSubtotal;
 
-	// PSGC Cloud API state
+	const totalItemsCount = checkoutItems.reduce(
+		(sum: number, item: CartLine) => sum + item.quantity,
+		0,
+	);
+
 	const [provinces, setProvinces] = useState<PsgcOption[]>([]);
 	const [cities, setCities] = useState<PsgcOption[]>([]);
 	const [barangays, setBarangays] = useState<PsgcOption[]>([]);
@@ -104,8 +130,7 @@ function CheckoutForm() {
 	const [loadingCities, setLoadingCities] = useState(false);
 	const [loadingBarangays, setLoadingBarangays] = useState(false);
 
-	// Form state
-	const [values, setValues] = useState<CheckoutFormValues>({
+	const [values, setValues] = useState<ExtendedFormValues>({
 		firstName: user?.firstName ?? "",
 		lastName: user?.lastName ?? "",
 		email: user?.userEmail ?? "",
@@ -119,6 +144,7 @@ function CheckoutForm() {
 		barangayName: "",
 		postalCode: "",
 		landmarkNotes: "",
+		customerNote: "",
 		courierId: "jnt",
 		paymentMethod: "cod",
 		cashReadyOption: "exact",
@@ -129,7 +155,7 @@ function CheckoutForm() {
 	const [customCashAmount, setCustomCashAmount] = useState("");
 	const [errors, setErrors] = useState<ValidationErrors>({});
 	const [touched, setTouched] = useState<
-		Partial<Record<keyof CheckoutFormValues, boolean>>
+		Partial<Record<keyof ExtendedFormValues, boolean>>
 	>({});
 	const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
 	const [voucherError, setVoucherError] = useState<string | null>(null);
@@ -140,7 +166,32 @@ function CheckoutForm() {
 		null,
 	);
 
-	// Load Provinces on mount
+	// Terms Modal State & Scroll Tracking
+	const [showTermsModal, setShowTermsModal] = useState(false);
+	const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+	const termsScrollRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (showTermsModal) {
+			setHasScrolledToBottom(false);
+			setTimeout(() => {
+				if (termsScrollRef.current) {
+					const { scrollHeight, clientHeight } =
+						termsScrollRef.current;
+					if (scrollHeight <= clientHeight + 2)
+						setHasScrolledToBottom(true);
+				}
+			}, 100);
+		}
+	}, [showTermsModal]);
+
+	const handleTermsScroll = (e: React.UIEvent<HTMLDivElement>) => {
+		const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+		if (Math.ceil(scrollTop + clientHeight) >= scrollHeight - 15) {
+			setHasScrolledToBottom(true);
+		}
+	};
+
 	useEffect(() => {
 		let active = true;
 		setLoadingProvinces(true);
@@ -148,7 +199,6 @@ function CheckoutForm() {
 			.then((list) => {
 				if (active) setProvinces(list);
 			})
-			.catch((err) => console.error(err))
 			.finally(() => {
 				if (active) setLoadingProvinces(false);
 			});
@@ -157,7 +207,6 @@ function CheckoutForm() {
 		};
 	}, []);
 
-	// Load Cities when Province changes
 	useEffect(() => {
 		if (!values.provinceCode) {
 			setCities([]);
@@ -169,7 +218,6 @@ function CheckoutForm() {
 			.then((list) => {
 				if (active) setCities(list);
 			})
-			.catch((err) => console.error(err))
 			.finally(() => {
 				if (active) setLoadingCities(false);
 			});
@@ -178,7 +226,6 @@ function CheckoutForm() {
 		};
 	}, [values.provinceCode]);
 
-	// Load Barangays when City changes
 	useEffect(() => {
 		if (!values.cityCode) {
 			setBarangays([]);
@@ -190,7 +237,6 @@ function CheckoutForm() {
 			.then((list) => {
 				if (active) setBarangays(list);
 			})
-			.catch((err) => console.error(err))
 			.finally(() => {
 				if (active) setLoadingBarangays(false);
 			});
@@ -224,8 +270,8 @@ function CheckoutForm() {
 	}, [finalTotal]);
 
 	function validateField(
-		field: keyof CheckoutFormValues,
-		val: CheckoutFormValues[keyof CheckoutFormValues],
+		field: keyof ExtendedFormValues,
+		val: ExtendedFormValues[keyof ExtendedFormValues],
 	): string | undefined {
 		switch (field) {
 			case "firstName":
@@ -271,7 +317,7 @@ function CheckoutForm() {
 
 	function validateAll(): ValidationErrors {
 		const nextErrors: ValidationErrors = {};
-		(Object.keys(values) as Array<keyof CheckoutFormValues>).forEach(
+		(Object.keys(values) as Array<keyof ExtendedFormValues>).forEach(
 			(key) => {
 				const msg = validateField(key, values[key]);
 				if (msg) nextErrors[key] = msg;
@@ -280,20 +326,19 @@ function CheckoutForm() {
 		return nextErrors;
 	}
 
-	function updateField<K extends keyof CheckoutFormValues>(
+	function updateField<K extends keyof ExtendedFormValues>(
 		field: K,
-		value: CheckoutFormValues[K],
+		value: ExtendedFormValues[K],
 	) {
 		setValues((prev) => ({ ...prev, [field]: value }));
-		if (touched[field]) {
+		if (touched[field])
 			setErrors((prev) => ({
 				...prev,
 				[field]: validateField(field, value),
 			}));
-		}
 	}
 
-	function handleBlur(field: keyof CheckoutFormValues) {
+	function handleBlur(field: keyof ExtendedFormValues) {
 		setTouched((prev) => ({ ...prev, [field]: true }));
 		setErrors((prev) => ({
 			...prev,
@@ -327,7 +372,7 @@ function CheckoutForm() {
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
 		setSubmitError(null);
-        if (cartBusy) return;
+		if (cartBusy) return;
 
 		if (checkoutItems.length === 0) {
 			setSubmitError("Your bag is empty. Add items before checking out.");
@@ -349,22 +394,19 @@ function CheckoutForm() {
 			agreedToTerms: true,
 		});
 
-		if (Object.keys(validation).length > 0) {
-			return;
-		}
+		if (Object.keys(validation).length > 0) return;
 
 		setSubmitting(true);
 		try {
 			let cashLabel = "";
 			if (values.paymentMethod === "cod") {
-				if (values.cashReadyOption === "custom") {
+				if (values.cashReadyOption === "custom")
 					cashLabel = `Custom amount - ${formatPrice(Number(customCashAmount) || finalTotal)}`;
-				} else {
+				else
 					cashLabel =
 						cashReadyChoices.find(
 							(c) => c.id === values.cashReadyOption,
 						)?.label ?? cashReadyChoices[0].label;
-				}
 			} else {
 				cashLabel = "E-Wallet on Arrival (Disregarded)";
 			}
@@ -379,24 +421,24 @@ function CheckoutForm() {
 				values: { ...values, cashReadyOption: cashLabel },
 			});
 
-			// Safely extend the types to bypass ESLint "any" and missing property errors
 			confirmed.items = confirmed.items.map((ci) => {
-				const variantId = (ci as CartLine & { fkProductVariantId?: string }).fkProductVariantId ?? ci.id;
-				
-				const cartRef = checkoutItems.find((item) => 
-					item.id === variantId || (item as CartLine & { productVariantId?: string }).productVariantId === variantId
+				const variantId =
+					(ci as CartLine & { fkProductVariantId?: string })
+						.fkProductVariantId ?? ci.id;
+				const cartRef = checkoutItems.find(
+					(item) =>
+						item.id === variantId ||
+						(item as CartLine & { productVariantId?: string })
+							.productVariantId === variantId,
 				);
-				
-				return { ...ci, imageUrl: cartRef?.imageUrl ?? null } as CartLine;
+				return {
+					...ci,
+					imageUrl: cartRef?.imageUrl ?? null,
+				} as CartLine;
 			});
 
 			setConfirmedOrder(confirmed);
-            
-			// Restore the clear() call so the cart empties upon success!
-			if (!buyNowItems) {
-				await clear();
-			}
-
+			if (!buyNowItems) await clear();
 			window.scrollTo({ top: 0, behavior: "smooth" });
 		} catch (err) {
 			setSubmitError(
@@ -409,23 +451,16 @@ function CheckoutForm() {
 		}
 	}
 
-	// =========================================================================
-	// ORDER CONFIRMATION VIEW
-	// =========================================================================
 	if (confirmedOrder) {
 		const deliveryWindow = formatDeliveryRange(
 			confirmedOrder.placedAt,
 			confirmedOrder.courier.daysMin,
 			confirmedOrder.courier.daysMax,
 		);
-		const totalItemCount = confirmedOrder.items.reduce(
-			(sum: number, i: CartLine) => sum + i.quantity,
-			0,
-		);
 
 		return (
 			<div className="min-h-[calc(100vh-5rem)] bg-white text-[#141414] pb-20">
-				<div className="mx-auto max-w-[1760px] px-6 sm:px-10 lg:px-[4.6vw] pt-8">
+				<div className="mx-auto max-w-[1920px] px-6 sm:px-10 lg:px-[4.6vw] pt-8">
 					<div className="flex flex-col justify-between gap-6 md:flex-row md:items-start">
 						<div>
 							<h1
@@ -442,7 +477,7 @@ function CheckoutForm() {
 							</p>
 						</div>
 
-						<div className="relative w-72 sm:w-80 lg:w-[26vw] lg:max-w-[30rem] shrink-0 self-start md:self-auto [container-type:inline-size]">
+						<div className="relative w-72 sm:w-80 lg:w-[26vw] lg:max-w-[30rem] shrink-0 [container-type:inline-size]">
 							<img
 								src={orderNoContainerSvg}
 								alt="Order Number Container"
@@ -451,17 +486,41 @@ function CheckoutForm() {
 							<span className="absolute left-[9%] bottom-[13%] origin-left whitespace-nowrap font-display text-[4.8cqw] font-black tracking-tight text-white -rotate-3">
 								{confirmedOrder.orderNumber}
 							</span>
+
+							{/* POSITIONED & TILTED INSIDE THE WRAPPER */}
+							<button
+								type="button"
+								onClick={() => {
+									navigator.clipboard.writeText(
+										confirmedOrder.orderNumber,
+									);
+									const btn =
+										document.getElementById(
+											"copy-order-btn",
+										);
+									if (btn) {
+										btn.innerText = "COPIED!";
+										setTimeout(() => {
+											btn.innerText = "COPY ORDER ID";
+										}, 2000);
+									}
+								}}
+								id="copy-order-btn"
+								className="absolute left-[9%] -bottom-10 bg-black text-white font-mono text-[11px] sm:text-xs font-bold uppercase tracking-widest px-3.5 py-2 border-2 border-black hover:bg-[#e50914] transition-colors cursor-pointer shadow-[3px_3px_0_#141414] -rotate-3"
+							>
+								COPY ORDER ID
+							</button>
 						</div>
 					</div>
 
-					<div className="mx-auto mt-10 lg:mt-14 grid max-w-[1180px] grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.27fr)_minmax(0,1fr)] lg:gap-x-11 items-start">
+					<div className="mx-auto mt-10 lg:mt-14 grid max-w-[1300px] grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.27fr)_minmax(0,1fr)] lg:gap-x-14 items-start">
 						<div className="w-full">
 							<div className="w-full bg-[#f5f3ec] border border-[#141414] p-7 font-mono text-[#141414]">
 								<div className="flex items-baseline gap-3 pb-4 border-b-2 border-dashed border-[#141414]">
 									<h2 className="font-display text-2xl font-black uppercase tracking-tight">
 										YOUR DROP
 									</h2>
-									<span className="text-xs text-neutral-600">
+									<span className="text-sm text-neutral-600">
 										{formatShortDate(
 											new Date(confirmedOrder.placedAt),
 										)}
@@ -473,7 +532,7 @@ function CheckoutForm() {
 										(item: CartLine) => (
 											<div
 												key={item.id}
-												className="flex items-start justify-between gap-3 text-sm"
+												className="flex items-start justify-between gap-3 text-base"
 											>
 												<div className="flex items-start gap-3 min-w-0">
 													<img
@@ -482,13 +541,13 @@ function CheckoutForm() {
 															undefined
 														}
 														alt={item.name}
-														className="h-14 w-14 shrink-0 object-cover border border-[#141414] bg-neutral-900"
+														className="h-16 w-16 shrink-0 object-cover border border-[#141414] bg-neutral-900"
 													/>
 													<div className="min-w-0">
 														<p className="font-bold uppercase truncate">
 															{item.name}
 														</p>
-														<p className="text-neutral-600 text-xs">
+														<p className="text-neutral-600 text-sm">
 															{item.size}
 														</p>
 													</div>
@@ -508,10 +567,10 @@ function CheckoutForm() {
 									)}
 								</div>
 
-								<div className="border-t-2 border-dashed border-[#141414] pt-5 space-y-2.5 text-sm">
+								<div className="border-t-2 border-dashed border-[#141414] pt-5 space-y-2.5 text-base">
 									<div className="flex justify-between">
 										<span>
-											Subtotal ({totalItemCount} items)
+											Subtotal ({totalItemsCount} items)
 										</span>
 										<span>
 											{formatPeso(
@@ -569,7 +628,7 @@ function CheckoutForm() {
 											)}
 										</span>
 									</div>
-									<p className="mt-3 text-xs text-neutral-600">
+									<p className="mt-3 text-sm text-neutral-600">
 										{confirmedOrder.paymentMethod === "cod"
 											? "Pay in cash to the rider on delivery."
 											: "Pay the rider by GCash or Maya QR at your door."}
@@ -595,7 +654,7 @@ function CheckoutForm() {
 								<p className="mt-3 font-display text-2xl font-extrabold">
 									{deliveryWindow}
 								</p>
-								<p className="mt-1 font-mono text-xs text-neutral-300">
+								<p className="mt-1 font-mono text-sm text-neutral-300">
 									via {confirmedOrder.courier.name}
 								</p>
 							</div>
@@ -617,7 +676,7 @@ function CheckoutForm() {
 										? "Cash on Delivery"
 										: "COD + E-Wallet on Arrival"}
 								</p>
-								<p className="mt-1 font-mono text-xs text-neutral-300">
+								<p className="mt-1 font-mono text-sm text-neutral-300">
 									Have{" "}
 									{formatPeso(confirmedOrder.totalAmount)}{" "}
 									ready for the rider.
@@ -636,13 +695,12 @@ function CheckoutForm() {
 										SHIPPING ADDRESS
 									</h3>
 								</div>
-								<p className="mt-3 font-mono text-sm font-bold">
+								<p className="mt-3 font-mono text-base font-bold">
 									{confirmedOrder.recipientName}
 								</p>
-								<p className="mt-2 font-mono text-xs leading-relaxed text-neutral-300">
+								<p className="mt-2 font-mono text-sm leading-relaxed text-neutral-300">
 									{confirmedOrder.addressLine},{" "}
-									{confirmedOrder.barangay},
-									<br />
+									{confirmedOrder.barangay},<br />
 									{confirmedOrder.city},{" "}
 									{confirmedOrder.province}{" "}
 									{confirmedOrder.postalCode}
@@ -671,26 +729,44 @@ function CheckoutForm() {
 		);
 	}
 
-	// =========================================================================
-	// MAIN CHECKOUT FORM VIEW
-	// =========================================================================
-	const totalItemsCount = checkoutItems.reduce(
-		(sum: number, item: CartLine) => sum + item.quantity,
-		0,
-	);
-
 	return (
-		<div className="bg-white text-[#141414] pb-16 lg:pb-0 lg:h-[calc(100dvh-5rem)] lg:overflow-hidden">
-			<div className="mx-auto flex h-full max-w-[1760px] flex-col px-4 sm:px-8 lg:px-12 pt-6">
-				{/* Top-Left CHECKOUT SVG Header */}
+		<div className="bg-white text-[#141414] min-h-screen pb-24">
+			<div className="mx-auto flex max-w-[1920px] w-full flex-col px-4 sm:px-8 lg:px-12 pt-6 lg:pt-10">
 				<div className="mb-6 shrink-0">
-					<img
-						src={checkoutHeaderSvg}
-						alt="CHECKOUT"
-						className="h-14 sm:h-16 w-auto select-none pointer-events-none"
-					/>
-                    {!user && <p className="mt-3 text-sm font-display">Have an account? <Link className="font-bold underline" to={`${ROUTES.signIn}?returnTo=${encodeURIComponent(ROUTES.checkout)}`} state={{ checkoutState: location.state }}>Sign in</Link> to save this order to your account, or continue as a guest.</p>}
-
+					<button
+						type="button"
+						onClick={() => {
+							navigate(ROUTES.shop);
+							openCart();
+						}}
+						className="group mb-6 inline-flex cursor-pointer items-center gap-2 font-display text-sm font-black uppercase tracking-widest text-neutral-600 transition-colors hover:text-[#e50914]"
+					>
+						<span className="transition-transform group-hover:-translate-x-1">
+							←
+						</span>{" "}
+						BACK TO BAG
+					</button>
+					<div>
+						<img
+							src={checkoutHeaderSvg}
+							alt="CHECKOUT"
+							className="h-14 sm:h-16 w-auto select-none pointer-events-none"
+						/>
+						{!user && (
+							<p className="mt-3 text-[15px] font-display">
+								Have an account?{" "}
+								<Link
+									className="font-bold underline"
+									to={`${ROUTES.signIn}?returnTo=${encodeURIComponent(ROUTES.checkout)}`}
+									state={{ checkoutState: location.state }}
+								>
+									Sign in
+								</Link>{" "}
+								to save this order to your account, or continue
+								as a guest.
+							</p>
+						)}
+					</div>
 				</div>
 
 				<form
@@ -698,23 +774,14 @@ function CheckoutForm() {
 					noValidate
 					style={
 						{
-							"--rw": "clamp(440px, 36vw, 640px)",
-							"--gap": "5rem",
+							"--rw": "clamp(480px, 38vw, 700px)",
+							"--gap": "6rem",
 						} as CSSProperties
 					}
-					className="relative grid grid-cols-1 gap-10 lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_var(--rw)] lg:gap-x-[var(--gap)]"
+					className="relative grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_var(--rw)] lg:gap-x-[var(--gap)] items-start"
 				>
-					{/* Red star graphic */}
-					<img
-						src={redStarGraphicSvg}
-						alt=""
-						aria-hidden="true"
-						className="pointer-events-none select-none hidden lg:block absolute top-1/2 z-30 h-[108%] w-auto max-w-none -translate-y-1/2 translate-x-1/2"
-						style={{ right: "calc(var(--rw) + var(--gap) / 2)" }}
-					/>
-
-					{/* LEFT SIDE */}
-					<div className="lg:h-full lg:overflow-y-auto lg:pr-4 lg:pb-20 space-y-6">
+					{/* LEFT SIDE: Form Content */}
+					<div className="space-y-6 lg:pr-4">
 						{/* 01 INTEL */}
 						<section
 							className="bg-[#141414] text-white p-6 sm:p-8"
@@ -730,13 +797,13 @@ function CheckoutForm() {
 							</div>
 
 							<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-								{/* First Name */}
 								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 										FIRST NAME
 									</label>
 									<input
 										type="text"
+										maxLength={100}
 										value={values.firstName}
 										onChange={(e) =>
 											updateField(
@@ -746,31 +813,24 @@ function CheckoutForm() {
 										}
 										onBlur={() => handleBlur("firstName")}
 										placeholder="Juan"
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 									/>
 									<div
-										className={`mt-1 h-[3px] transition-all ${
-											errors.firstName
-												? "w-full bg-red-500"
-												: values.firstName
-													? "w-2/3 bg-[#e50914]"
-													: "w-1/3 bg-neutral-700"
-										}`}
+										className={`mt-1 h-[3px] transition-all ${errors.firstName ? "w-full bg-red-500" : values.firstName ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 									/>
 									{errors.firstName && (
-										<p className="mt-1 font-mono text-[11px] text-red-400">
+										<p className="mt-1 font-mono text-xs text-red-400">
 											{errors.firstName}
 										</p>
 									)}
 								</div>
-
-								{/* Last Name */}
 								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 										LAST NAME
 									</label>
 									<input
 										type="text"
+										maxLength={100}
 										value={values.lastName}
 										onChange={(e) =>
 											updateField(
@@ -780,62 +840,48 @@ function CheckoutForm() {
 										}
 										onBlur={() => handleBlur("lastName")}
 										placeholder="Dela Cruz"
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 									/>
 									<div
-										className={`mt-1 h-[3px] transition-all ${
-											errors.lastName
-												? "w-full bg-red-500"
-												: values.lastName
-													? "w-2/3 bg-[#e50914]"
-													: "w-1/3 bg-neutral-700"
-										}`}
+										className={`mt-1 h-[3px] transition-all ${errors.lastName ? "w-full bg-red-500" : values.lastName ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 									/>
 									{errors.lastName && (
-										<p className="mt-1 font-mono text-[11px] text-red-400">
+										<p className="mt-1 font-mono text-xs text-red-400">
 											{errors.lastName}
 										</p>
 									)}
 								</div>
-
-								{/* Email */}
 								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 										EMAIL
 									</label>
 									<input
 										type="email"
+										maxLength={255}
 										value={values.email}
 										onChange={(e) =>
 											updateField("email", e.target.value)
 										}
 										onBlur={() => handleBlur("email")}
 										placeholder="juan@example.com"
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 									/>
 									<div
-										className={`mt-1 h-[3px] transition-all ${
-											errors.email
-												? "w-full bg-red-500"
-												: values.email
-													? "w-2/3 bg-[#e50914]"
-													: "w-1/3 bg-neutral-700"
-										}`}
+										className={`mt-1 h-[3px] transition-all ${errors.email ? "w-full bg-red-500" : values.email ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 									/>
 									{errors.email && (
-										<p className="mt-1 font-mono text-[11px] text-red-400">
+										<p className="mt-1 font-mono text-xs text-red-400">
 											{errors.email}
 										</p>
 									)}
 								</div>
-
-								{/* Mobile Number */}
 								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 										MOBILE NUMBER
 									</label>
 									<input
 										type="tel"
+										maxLength={100}
 										value={values.mobileNumber}
 										onChange={(e) =>
 											updateField(
@@ -847,19 +893,13 @@ function CheckoutForm() {
 											handleBlur("mobileNumber")
 										}
 										placeholder="0917 123 4567"
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 									/>
 									<div
-										className={`mt-1 h-[3px] transition-all ${
-											errors.mobileNumber
-												? "w-full bg-red-500"
-												: values.mobileNumber
-													? "w-2/3 bg-[#e50914]"
-													: "w-1/3 bg-neutral-700"
-										}`}
+										className={`mt-1 h-[3px] transition-all ${errors.mobileNumber ? "w-full bg-red-500" : values.mobileNumber ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 									/>
 									{errors.mobileNumber && (
-										<p className="mt-1 font-mono text-[11px] text-red-400">
+										<p className="mt-1 font-mono text-xs text-red-400">
 											{errors.mobileNumber}
 										</p>
 									)}
@@ -882,41 +922,34 @@ function CheckoutForm() {
 							</div>
 
 							<div className="space-y-6">
-								{/* House No. / Street / Unit */}
 								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 										HOUSE NO. / STREET / UNIT
 									</label>
 									<input
 										type="text"
+										maxLength={255}
 										value={values.line1}
 										onChange={(e) =>
 											updateField("line1", e.target.value)
 										}
 										onBlur={() => handleBlur("line1")}
 										placeholder="123 Sampaguita St."
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 									/>
 									<div
-										className={`mt-1 h-[3px] transition-all ${
-											errors.line1
-												? "w-full bg-red-500"
-												: values.line1
-													? "w-3/5 bg-[#e50914]"
-													: "w-1/3 bg-neutral-700"
-										}`}
+										className={`mt-1 h-[3px] transition-all ${errors.line1 ? "w-full bg-red-500" : values.line1 ? "w-3/5 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 									/>
 									{errors.line1 && (
-										<p className="mt-1 font-mono text-[11px] text-red-400">
+										<p className="mt-1 font-mono text-xs text-red-400">
 											{errors.line1}
 										</p>
 									)}
 								</div>
 
-								{/* Province & Municipality / City (PSGC Cloud API) - appearance-none */}
 								<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 									<div>
-										<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+										<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 											PROVINCE
 										</label>
 										<select
@@ -944,7 +977,7 @@ function CheckoutForm() {
 											onBlur={() =>
 												handleBlur("provinceCode")
 											}
-											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 										>
 											<option value="">
 												{loadingProvinces
@@ -961,23 +994,17 @@ function CheckoutForm() {
 											))}
 										</select>
 										<div
-											className={`mt-1 h-[3px] transition-all ${
-												errors.provinceCode
-													? "w-full bg-red-500"
-													: values.provinceCode
-														? "w-2/3 bg-[#e50914]"
-														: "w-1/3 bg-neutral-700"
-											}`}
+											className={`mt-1 h-[3px] transition-all ${errors.provinceCode ? "w-full bg-red-500" : values.provinceCode ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 										/>
 										{errors.provinceCode && (
-											<p className="mt-1 font-mono text-[11px] text-red-400">
+											<p className="mt-1 font-mono text-xs text-red-400">
 												{errors.provinceCode}
 											</p>
 										)}
 									</div>
 
 									<div>
-										<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+										<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 											MUNICIPALITY / CITY
 										</label>
 										<select
@@ -1006,7 +1033,7 @@ function CheckoutForm() {
 											onBlur={() =>
 												handleBlur("cityCode")
 											}
-											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] disabled:opacity-60 focus:outline-none"
+											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] disabled:opacity-60 focus:outline-none"
 										>
 											<option value="">
 												{loadingCities
@@ -1023,26 +1050,19 @@ function CheckoutForm() {
 											))}
 										</select>
 										<div
-											className={`mt-1 h-[3px] transition-all ${
-												errors.cityCode
-													? "w-full bg-red-500"
-													: values.cityCode
-														? "w-2/3 bg-[#e50914]"
-														: "w-1/3 bg-neutral-700"
-											}`}
+											className={`mt-1 h-[3px] transition-all ${errors.cityCode ? "w-full bg-red-500" : values.cityCode ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 										/>
 										{errors.cityCode && (
-											<p className="mt-1 font-mono text-[11px] text-red-400">
+											<p className="mt-1 font-mono text-xs text-red-400">
 												{errors.cityCode}
 											</p>
 										)}
 									</div>
 								</div>
 
-								{/* Barangay & Postal Code */}
 								<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 									<div>
-										<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+										<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 											BARANGAY
 										</label>
 										<select
@@ -1070,7 +1090,7 @@ function CheckoutForm() {
 											onBlur={() =>
 												handleBlur("barangayCode")
 											}
-											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] disabled:opacity-60 focus:outline-none"
+											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] disabled:opacity-60 focus:outline-none"
 										>
 											<option value="">
 												{loadingBarangays
@@ -1087,23 +1107,17 @@ function CheckoutForm() {
 											))}
 										</select>
 										<div
-											className={`mt-1 h-[3px] transition-all ${
-												errors.barangayCode
-													? "w-full bg-red-500"
-													: values.barangayCode
-														? "w-2/3 bg-[#e50914]"
-														: "w-1/3 bg-neutral-700"
-											}`}
+											className={`mt-1 h-[3px] transition-all ${errors.barangayCode ? "w-full bg-red-500" : values.barangayCode ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 										/>
 										{errors.barangayCode && (
-											<p className="mt-1 font-mono text-[11px] text-red-400">
+											<p className="mt-1 font-mono text-xs text-red-400">
 												{errors.barangayCode}
 											</p>
 										)}
 									</div>
 
 									<div>
-										<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+										<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 											POSTAL CODE
 										</label>
 										<input
@@ -1124,43 +1138,52 @@ function CheckoutForm() {
 												handleBlur("postalCode")
 											}
 											placeholder="1012"
-											className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+											className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 										/>
 										<div
-											className={`mt-1 h-[3px] transition-all ${
-												errors.postalCode
-													? "w-full bg-red-500"
-													: values.postalCode
-														? "w-2/3 bg-[#e50914]"
-														: "w-1/3 bg-neutral-700"
-											}`}
+											className={`mt-1 h-[3px] transition-all ${errors.postalCode ? "w-full bg-red-500" : values.postalCode ? "w-2/3 bg-[#e50914]" : "w-1/3 bg-neutral-700"}`}
 										/>
 										{errors.postalCode && (
-											<p className="mt-1 font-mono text-[11px] text-red-400">
+											<p className="mt-1 font-mono text-xs text-red-400">
 												{errors.postalCode}
 											</p>
 										)}
 									</div>
 								</div>
 
-								{/* Landmark / Rider Notes */}
-								<div>
-									<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
-										LANDMARK / RIDER NOTES
-									</label>
-									<input
-										type="text"
-										value={values.landmarkNotes}
-										onChange={(e) =>
-											updateField(
-												"landmarkNotes",
-												e.target.value,
-											)
-										}
-										placeholder="Near the basketball court"
-										className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
-									/>
-									<div className="mt-1 h-[3px] w-3/5 bg-[#e50914]" />
+								<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+									<div>
+										<label className="block font-display text-[13px] font-bold uppercase tracking-wider mb-2 text-neutral-300">
+											NOTE FOR SELLER (OPTIONAL)
+										</label>
+										<textarea
+											rows={2}
+											maxLength={1000}
+											value={values.customerNote}
+											onChange={(e) =>
+												updateField(
+													"customerNote",
+													e.target.value,
+												)
+											}
+											className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-[15px] text-[#141414] focus:outline-none"
+											placeholder="Special instructions for the team..."
+										/>
+										<div className="mt-1 h-[3px] w-1/3 bg-neutral-700" />
+									</div>
+
+									<div>
+										<label className="block font-display text-[13px] font-bold uppercase tracking-wider mb-2 text-neutral-300">
+											NOTE FOR COURIER (OPTIONAL)
+										</label>
+										<textarea
+											rows={2}
+											maxLength={1000}
+											className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-[15px] text-[#141414] focus:outline-none"
+											placeholder="Landmarks, delivery instructions..."
+										/>
+										<div className="mt-1 h-[3px] w-1/3 bg-neutral-700" />
+									</div>
 								</div>
 							</div>
 						</section>
@@ -1180,7 +1203,7 @@ function CheckoutForm() {
 							</div>
 
 							<div>
-								<label className="block font-display text-xs font-bold uppercase tracking-wider mb-2">
+								<label className="block font-display text-sm font-bold uppercase tracking-wider mb-2">
 									COURIER
 								</label>
 								<select
@@ -1191,7 +1214,7 @@ function CheckoutForm() {
 											e.target.value as CourierId,
 										)
 									}
-									className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none"
+									className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none"
 								>
 									{COURIER_OPTIONS.map((c) => (
 										<option key={c.id} value={c.id}>
@@ -1219,16 +1242,11 @@ function CheckoutForm() {
 							</div>
 
 							<div className="space-y-4">
-								{/* Radio Option 1: Cash on Delivery */}
 								<label
 									onClick={() =>
 										updateField("paymentMethod", "cod")
 									}
-									className={`relative block cursor-pointer p-4 border transition-colors ${
-										values.paymentMethod === "cod"
-											? "bg-[#e50914] border-[#e50914] text-white"
-											: "bg-transparent border-neutral-700 text-white hover:border-neutral-500"
-									}`}
+									className={`relative block cursor-pointer p-4 border transition-colors ${values.paymentMethod === "cod" ? "bg-[#e50914] border-[#e50914] text-white" : "bg-transparent border-neutral-700 text-white hover:border-neutral-500"}`}
 								>
 									<div className="flex items-center gap-2.5">
 										<input
@@ -1245,21 +1263,20 @@ function CheckoutForm() {
 											}
 											className="sr-only"
 										/>
-										<span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white">
+										<span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white">
 											{values.paymentMethod === "cod" && (
 												<span className="h-2 w-2 rounded-full bg-white" />
 											)}
 										</span>
-										<span className="font-mono text-xs font-bold uppercase tracking-wider">
+										<span className="font-mono text-sm font-bold uppercase tracking-wider">
 											CASH ON DELIVERY
 										</span>
 									</div>
-									<p className="mt-1.5 pl-6 font-mono text-[11px] text-white/90">
+									<p className="mt-1.5 pl-7 font-mono text-xs text-white/90">
 										Pay the rider in cash when it arrives.
 									</p>
 								</label>
 
-								{/* Radio Option 2: COD + E-Wallet on Arrival */}
 								<label
 									onClick={() =>
 										updateField(
@@ -1267,11 +1284,7 @@ function CheckoutForm() {
 											"cod_ewallet",
 										)
 									}
-									className={`relative block cursor-pointer p-4 border transition-colors ${
-										values.paymentMethod === "cod_ewallet"
-											? "bg-[#e50914] border-[#e50914] text-white"
-											: "bg-transparent border-neutral-700 text-white hover:border-neutral-500"
-									}`}
+									className={`relative block cursor-pointer p-4 border transition-colors ${values.paymentMethod === "cod_ewallet" ? "bg-[#e50914] border-[#e50914] text-white" : "bg-transparent border-neutral-700 text-white hover:border-neutral-500"}`}
 								>
 									<div className="flex items-center gap-2.5">
 										<input
@@ -1289,31 +1302,25 @@ function CheckoutForm() {
 											}
 											className="sr-only"
 										/>
-										<span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white">
+										<span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white">
 											{values.paymentMethod ===
 												"cod_ewallet" && (
 												<span className="h-2 w-2 rounded-full bg-white" />
 											)}
 										</span>
-										<span className="font-mono text-xs font-bold uppercase tracking-wider">
+										<span className="font-mono text-sm font-bold uppercase tracking-wider">
 											COD + E-WALLET ON ARRIVAL
 										</span>
 									</div>
-									<p className="mt-1.5 pl-6 font-mono text-[11px] text-white/90">
+									<p className="mt-1.5 pl-7 font-mono text-xs text-white/90">
 										Pay the rider by GCash or Maya QR at
 										your door.
 									</p>
 								</label>
 
-								{/* CASH READY Dropdown */}
 								<div className="pt-2">
 									<label
-										className={`block font-display text-xs font-bold uppercase tracking-wider mb-2 ${
-											values.paymentMethod ===
-											"cod_ewallet"
-												? "opacity-50"
-												: ""
-										}`}
+										className={`block font-display text-sm font-bold uppercase tracking-wider mb-2 ${values.paymentMethod === "cod_ewallet" ? "opacity-50" : ""}`}
 									>
 										CASH READY
 									</label>
@@ -1329,7 +1336,7 @@ function CheckoutForm() {
 												e.target.value,
 											)
 										}
-										className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] disabled:opacity-40 disabled:bg-neutral-800 disabled:text-neutral-400 disabled:cursor-not-allowed focus:outline-none"
+										className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] disabled:opacity-40 disabled:bg-neutral-800 disabled:text-neutral-400 disabled:cursor-not-allowed focus:outline-none"
 									>
 										{cashReadyChoices.map((choice) => (
 											<option
@@ -1341,20 +1348,16 @@ function CheckoutForm() {
 										))}
 									</select>
 									<div
-										className={`mt-1 h-[3px] w-3/5 ${
-											values.paymentMethod ===
-											"cod_ewallet"
-												? "bg-neutral-600 opacity-50"
-												: "bg-[#e50914]"
-										}`}
+										className={`mt-1 h-[3px] w-3/5 ${values.paymentMethod === "cod_ewallet" ? "bg-neutral-600 opacity-50" : "bg-[#e50914]"}`}
 									/>
 
 									{values.paymentMethod === "cod" &&
 										values.cashReadyOption === "custom" && (
-											<div className="mt-3">
+											<div className="mt-4">
 												<input
 													type="text"
 													inputMode="numeric"
+													maxLength={15}
 													value={customCashAmount}
 													onChange={(e) =>
 														setCustomCashAmount(
@@ -1365,7 +1368,7 @@ function CheckoutForm() {
 														)
 													}
 													placeholder="Enter custom cash amount (e.g. 2000)"
-													className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-sm text-[#141414] focus:outline-none border border-neutral-400"
+													className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none border border-neutral-400"
 												/>
 												<div className="mt-1 h-[3px] w-2/5 bg-[#e50914]" />
 											</div>
@@ -1375,10 +1378,17 @@ function CheckoutForm() {
 						</section>
 					</div>
 
-					{/* RIGHT SIDE: scrolls independently */}
-					<div className="relative lg:h-full lg:overflow-y-auto lg:pb-20 lg:pt-1 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+					{/* RIGHT SIDE: Sticky Receipt */}
+					<div className="relative lg:sticky lg:top-[calc(var(--nav-h)+2rem)] h-fit">
+						{/* Red star graphic attached to the sticky right side so it follows the user natively */}
+						<img
+							src={redStarGraphicSvg}
+							alt=""
+							aria-hidden="true"
+							className="pointer-events-none select-none hidden lg:block absolute top-1/2 z-30 h-[1000px] w-auto max-w-none -translate-y-1/2 right-full mr-[3rem] translate-x-1/2"
+						/>
+
 						<div className="relative w-full pr-2 pb-2">
-							{/* Receipt Container */}
 							<div className="relative z-20 bg-[#f5f3ec] border-2 border-[#141414] p-6 sm:p-8 lg:p-10 font-mono text-[#141414] shadow-[8px_8px_0_#141414]">
 								<div className="flex items-baseline justify-between pb-4 border-b-2 border-dashed border-[#141414]">
 									<h2 className="font-display text-4xl font-black uppercase tracking-tight">
@@ -1391,7 +1401,7 @@ function CheckoutForm() {
 
 								<div className="my-6 max-h-[32vh] overflow-y-auto pr-1 space-y-5">
 									{checkoutItems.length === 0 ? (
-										<p className="py-6 text-center text-xs text-neutral-500">
+										<p className="py-6 text-center text-sm text-neutral-500">
 											Your bag is currently empty.
 										</p>
 									) : (
@@ -1434,12 +1444,13 @@ function CheckoutForm() {
 								</div>
 
 								<div className="border-t-2 border-dashed border-[#141414] pt-5 pb-5">
-									<label className="block text-xs font-bold uppercase tracking-wider mb-2">
+									<label className="block text-sm font-bold uppercase tracking-wider mb-2">
 										VOUCHER CODE
 									</label>
 									<div className="flex items-stretch gap-2">
 										<input
 											type="text"
+											maxLength={40}
 											value={values.voucherCode}
 											onChange={(e) =>
 												updateField(
@@ -1448,7 +1459,7 @@ function CheckoutForm() {
 												)
 											}
 											placeholder="REBEL200"
-											className="flex-1 bg-white px-4 py-3 text-sm text-[#141414] border border-neutral-300 focus:border-[#141414] focus:outline-none"
+											className="flex-1 bg-white px-4 py-3 text-base text-[#141414] border border-neutral-300 focus:border-[#141414] focus:outline-none"
 										/>
 										<button
 											type="button"
@@ -1460,12 +1471,12 @@ function CheckoutForm() {
 										</button>
 									</div>
 									{voucherError && (
-										<p className="mt-1.5 text-[11px] text-[#e50914]">
+										<p className="mt-1.5 text-xs text-[#e50914] font-bold">
 											{voucherError}
 										</p>
 									)}
 									{voucher && !voucherError && (
-										<p className="mt-1.5 text-[11px] text-emerald-700">
+										<p className="mt-1.5 text-xs text-emerald-700 font-bold">
 											Voucher {voucher.code} applied (-
 											{formatPrice(
 												voucher.discountAmount,
@@ -1522,7 +1533,7 @@ function CheckoutForm() {
 											{formatPrice(finalTotal)}
 										</span>
 									</div>
-									<p className="mt-3 text-sm text-neutral-600">
+									<p className="mt-3 text-[15px] text-neutral-600">
 										{values.paymentMethod === "cod"
 											? "Pay in cash to the rider on delivery."
 											: "Pay the rider by GCash or Maya QR at your door."}
@@ -1530,45 +1541,65 @@ function CheckoutForm() {
 								</div>
 							</div>
 
-							{/* Terms Checkbox */}
 							<div className="relative z-40 mt-6 pl-2">
-								<label className="flex items-center gap-2.5 cursor-pointer font-mono text-sm text-[#141414]">
+								{/* UPDATED: Checkbox intercept logic! */}
+								<label className="flex items-center gap-3 cursor-pointer font-mono text-[15px] text-[#141414]">
 									<input
 										type="checkbox"
 										checked={values.agreedToTerms}
-										onChange={(e) =>
-											updateField(
-												"agreedToTerms",
-												e.target.checked,
-											)
-										}
-										className="h-4 w-4 accent-[#141414]"
+										onChange={(e) => {
+											if (
+												!hasScrolledToBottom &&
+												e.target.checked
+											) {
+												e.preventDefault();
+												setShowTermsModal(true);
+											} else {
+												updateField(
+													"agreedToTerms",
+													e.target.checked,
+												);
+											}
+										}}
+										className="h-5 w-5 accent-[#141414]"
 									/>
 									<span>
-										I agree to the Terms and Return Policy.
+										I agree to the{" "}
+										<button
+											type="button"
+											onClick={(e) => {
+												e.preventDefault();
+												setShowTermsModal(true);
+											}}
+											className="underline hover:text-[#e50914]"
+										>
+											Terms and Return Policy
+										</button>
+										.
 									</span>
 								</label>
 								{errors.agreedToTerms && (
-									<p className="mt-1 font-mono text-[11px] text-[#e50914]">
+									<p className="mt-1.5 font-mono text-xs text-[#e50914] font-bold">
 										{errors.agreedToTerms}
 									</p>
 								)}
 							</div>
 
 							{submitError && (
-								<div className="relative z-40 mt-3 border border-[#e50914] bg-red-50 px-3 py-2 font-mono text-xs text-[#e50914]">
+								<div className="relative z-40 mt-3 border border-[#e50914] bg-red-50 px-3 py-2 font-mono text-sm text-[#e50914] font-bold">
 									{submitError}
 								</div>
 							)}
 
-							{/* Place Order Button */}
 							<div className="relative z-40 mt-5">
 								<AngledButton
 									variant="buyNow"
 									type="submit"
 									className="w-full"
 									disabled={
-										submitting || cartBusy || checkoutItems.length === 0
+										submitting ||
+										cartBusy ||
+										checkoutItems.length === 0
 									}
 								>
 									{submitting
@@ -1578,24 +1609,122 @@ function CheckoutForm() {
 											: "PLACE ORDER - COD / QR"}
 								</AngledButton>
 							</div>
-
-							{/* Back to Bag Link */}
-							<div className="relative z-40 mt-6 pl-2">
-								<button
-									type="button"
-									onClick={() => {
-										navigate(ROUTES.shop);
-										openCart();
-									}}
-									className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] hover:text-[#e50914] cursor-pointer"
-								>
-									← BACK TO BAG
-								</button>
-							</div>
 						</div>
 					</div>
 				</form>
 			</div>
+
+			{/* TERMS AND RETURN POLICY MODAL */}
+			{showTermsModal && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm select-text"
+					onClick={() => setShowTermsModal(false)}
+				>
+					<div
+						className="relative w-full max-w-2xl bg-[#f5f3ec] border-2 border-[#141414] shadow-[8px_8px_0_#141414] p-6 sm:p-8 font-mono text-[#141414] max-h-[85vh] flex flex-col"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between border-b-2 border-dashed border-[#141414] pb-4 mb-4 shrink-0">
+							<h2 className="font-display text-2xl font-black uppercase tracking-tight">
+								Terms & Return Policy
+							</h2>
+							<button
+								type="button"
+								onClick={() => setShowTermsModal(false)}
+								className="h-8 w-8 flex items-center justify-center border border-[#141414] font-display text-xl font-black hover:bg-[#e50914] hover:text-white hover:border-[#e50914] transition-colors cursor-pointer"
+								aria-label="Close modal"
+							>
+								&times;
+							</button>
+						</div>
+
+						<div
+							ref={termsScrollRef}
+							onScroll={handleTermsScroll}
+							className="overflow-y-auto pr-2 space-y-5 text-sm leading-relaxed flex-1"
+						>
+							<div>
+								<h3 className="font-extrabold text-black uppercase tracking-wide mb-2">
+									1. Pricing, Payments & Orders
+								</h3>
+								<p>
+									All product prices are stated in Philippine
+									Peso (PHP) and are subject to change without
+									prior notice. We accept payments via GCash,
+									Maya, Bank Transfer, and Cash on Delivery
+									(COD). By confirming an order, you agree to
+									pay the total amount including shipping
+									fees. Unpaid orders (except COD) will be
+									automatically cancelled after 24 hours.
+								</p>
+							</div>
+							<div>
+								<h3 className="font-extrabold text-black uppercase tracking-wide mb-2">
+									2. Shipping & Delivery
+								</h3>
+								<p>
+									We fulfill orders via local courier partners
+									(e.g., J&T Express, LBC). Standard delivery
+									within Metro Manila takes 1-3 business days,
+									while provincial shipping takes 3-7 business
+									days. Snug Rebel is not liable for delays
+									caused by severe weather (typhoons),
+									inaccurate shipping information, or
+									third-party courier handling issues.
+								</p>
+							</div>
+							<div>
+								<h3 className="font-extrabold text-[#e50914] uppercase tracking-wide mb-2">
+									3. Returns & Exchanges (DTI Compliance)
+								</h3>
+								<p>
+									In compliance with the Department of Trade
+									and Industry (DTI) regulations (R.A. 7394 -
+									Consumer Act of the Philippines), we accept
+									returns strictly for defective or damaged
+									goods within seven (7) days of receipt. We
+									do not offer refunds or exchanges for
+									"change of mind." Items must be unwashed,
+									unworn, and have original tags attached.
+								</p>
+							</div>
+							<div>
+								<h3 className="font-extrabold text-black uppercase tracking-wide mb-2">
+									4. Governing Law
+								</h3>
+								<p>
+									These Terms shall be governed by and
+									construed in accordance with the laws of the
+									Republic of the Philippines. Any disputes
+									arising from these Terms shall be subject to
+									the exclusive jurisdiction of the courts
+									located in the City of Manila.
+								</p>
+							</div>
+						</div>
+
+						<div className="mt-6 pt-4 border-t-2 border-dashed border-[#141414] shrink-0">
+							<button
+								type="button"
+								disabled={!hasScrolledToBottom}
+								onClick={() => {
+									updateField("agreedToTerms", true);
+									setShowTermsModal(false);
+								}}
+								className={`w-full py-3 font-display font-black uppercase tracking-wider transition-colors cursor-pointer ${
+									hasScrolledToBottom
+										? "bg-[#141414] text-white hover:bg-[#e50914]"
+										: "bg-neutral-300 text-neutral-500 cursor-not-allowed"
+								}`}
+							>
+								{hasScrolledToBottom
+									? "I Agree"
+									: "Scroll to bottom to agree"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

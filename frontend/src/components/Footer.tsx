@@ -25,7 +25,7 @@ function SocialIcon({ src, alt }: { src: string; alt: string }) {
 
 export default function Footer() {
   return (
-    <footer className="relative w-full bg-[#0a0a0a] overflow-hidden border-t border-neutral-900">
+    <footer className="relative w-full bg-[#0a0a0a] overflow-hidden border-t border-neutral-900 z-30">
       
       {/* Background Star Pattern */}
       <img 

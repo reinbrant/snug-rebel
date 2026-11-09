@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Minus, Plus, Trash2 } from "lucide-react";
@@ -16,25 +17,9 @@ import checkoutState1 from "../../assets/checkout_button_container_state1.svg";
 import closeState0 from "../../assets/cart_x_button_container_state0.svg";
 import closeState1 from "../../assets/cart_x_button_container_state1.svg";
 
-/**
- * How long the slide-out takes before the drawer unmounts.
- * Keep in sync with --animate-cart-out in index.css.
- */
 const CLOSE_MS = 250;
-
-/**
- * Where "YOUR BAG" sits inside cart_header_container.svg, as % of the image.
- * The text is centered inside this box, so move the box to move the text:
- *   - too far right? raise `right` (or lower `left`)
- *   - too low?       raise `bottom` (or lower `top`)
- * fontCqw is the font size as a % of the header's width.
- */
 const HEADER_TEXT = { top: 12, right: 14, bottom: 0, left: 22, fontCqw: 10 };
 
-/**
- * Two stacked images that cross-fade (instead of popping) when the parent `group` is
- * hovered or focused. The resting image sets the box size, the other one overlays it.
- */
 function FadeSwap({
 	rest,
 	active,
@@ -66,15 +51,12 @@ function FadeSwap({
 }
 
 const stepperButton =
-	"grid size-6 cursor-pointer place-items-center bg-brand-red-dark text-white transition " +
-	"hover:bg-brand-red active:scale-90 disabled:cursor-not-allowed disabled:opacity-40";
+	"grid size-6 cursor-pointer place-items-center bg-brand-red-dark text-white transition hover:bg-brand-red active:scale-90 disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function CartDrawer() {
 	const navigate = useNavigate();
 	const {
 		lines,
-		itemCount,
-		subtotal,
 		status,
 		error,
 		busy,
@@ -86,20 +68,33 @@ export default function CartDrawer() {
 		dismissError,
 	} = useCart();
 
-	// The line the shopper is being asked to confirm deleting (null = no dialog)
+	// INSTANT UPDATE OPTIMIZATION: Hold optimistic state so the UI reacts instantly to quantity changes.
+	const [optimisticLines, setOptimisticLines] = useState<CartLine[]>(lines);
+
+	// Synchronize when standard lines come from the backend.
+	useEffect(() => {
+		setOptimisticLines(lines);
+	}, [lines]);
+
+	const handleOptimisticQuantity = (id: string, newQty: number) => {
+		setOptimisticLines((prev) =>
+			prev.map((line) =>
+				line.id === id ? { ...line, quantity: newQty } : line,
+			),
+		);
+		setQuantity(id, newQty); // Fires to backend in background
+	};
+
 	const [pendingLine, setPendingLine] = useState<CartLine | null>(null);
-	// True while the drawer is sliding back out
 	const [closing, setClosing] = useState(false);
 	const closeTimer = useRef<number | null>(null);
 
-	// If the cart gets closed from somewhere else, don't leave a dialog waiting for next time
 	const [wasOpen, setWasOpen] = useState(isOpen);
 	if (wasOpen !== isOpen) {
 		setWasOpen(isOpen);
 		if (!isOpen) setPendingLine(null);
 	}
 
-	/** Slide out, then actually close. Use this for every way of closing the drawer. */
 	const requestClose = useCallback(() => {
 		if (closeTimer.current !== null) return;
 		setClosing(true);
@@ -111,13 +106,12 @@ export default function CartDrawer() {
 		}, CLOSE_MS);
 	}, [closeCart]);
 
-	useEffect(
-		() => () => {
+	useEffect(() => {
+		return () => {
 			if (closeTimer.current !== null)
 				window.clearTimeout(closeTimer.current);
-		},
-		[],
-	);
+		};
+	}, []);
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -135,6 +129,16 @@ export default function CartDrawer() {
 		setPendingLine(null);
 		if (line) await removeLine(line.id);
 	};
+
+	// Calculate display stats via the optimistic state for instant UI updates!
+	const displayItemCount = optimisticLines.reduce(
+		(sum, item) => sum + item.quantity,
+		0,
+	);
+	const displaySubtotal = optimisticLines.reduce(
+		(sum, item) => sum + item.unitPrice * item.quantity,
+		0,
+	);
 
 	return (
 		<div
@@ -173,7 +177,6 @@ export default function CartDrawer() {
 					/>
 				</button>
 
-				{/* Header */}
 				<header className="px-6 pb-2 pt-20">
 					<div
 						className="relative mx-auto w-[min(100%,400px)] -translate-x-3"
@@ -198,13 +201,12 @@ export default function CartDrawer() {
 							Your Bag
 							<span className="sr-only">
 								{" "}
-								({itemCount} items)
+								({displayItemCount} items)
 							</span>
 						</h2>
 					</div>
 				</header>
 
-				{/* Error Banner */}
 				{error && (
 					<div
 						role="alert"
@@ -222,13 +224,12 @@ export default function CartDrawer() {
 					</div>
 				)}
 
-				{/* Items List */}
 				<div className="flex-1 overflow-y-auto px-6 py-5">
 					{status === "loading" ? (
 						<p className="py-12 text-center font-display text-lg font-bold">
 							Loading your bag…
 						</p>
-					) : lines.length === 0 ? (
+					) : optimisticLines.length === 0 ? (
 						<div className="flex h-full flex-col items-center justify-center gap-12 text-center">
 							<p className="text-xl">Your bag is empty</p>
 							<ShopButton to={ROUTES.shop} onClick={requestClose}>
@@ -237,7 +238,7 @@ export default function CartDrawer() {
 						</div>
 					) : (
 						<ul className="space-y-4">
-							{lines.map((line) => {
+							{optimisticLines.map((line) => {
 								const to = itemPath(
 									line.productId || line.variantId,
 								);
@@ -271,9 +272,10 @@ export default function CartDrawer() {
 													>
 														{line.name}
 													</Link>
+
+													{/* UNLOCKED: Removed disabled={busy} so you can delete instantly */}
 													<button
 														type="button"
-														disabled={busy}
 														onClick={() =>
 															setPendingLine(line)
 														}
@@ -287,9 +289,9 @@ export default function CartDrawer() {
 													</button>
 												</div>
 
+												{/* UNLOCKED: Removed disabled={busy} from variant picker */}
 												<CartVariantPicker
 													line={line}
-													disabled={busy}
 													onChange={(change) =>
 														changeVariant(
 															line.id,
@@ -307,17 +309,16 @@ export default function CartDrawer() {
 													</span>
 
 													<div className="flex items-center gap-1.5">
+														{/* UNLOCKED: Removed disabled={busy} */}
 														<button
 															type="button"
-															disabled={busy}
 															onClick={() =>
-																// at qty 1, "-" means delete, so confirm first
 																line.quantity <=
 																1
 																	? setPendingLine(
 																			line,
 																		)
-																	: void setQuantity(
+																	: handleOptimisticQuantity(
 																			line.id,
 																			line.quantity -
 																				1,
@@ -333,18 +334,20 @@ export default function CartDrawer() {
 																strokeWidth={3}
 															/>
 														</button>
+
 														<span className="grid h-7 w-10 place-items-center border border-brand-red font-display text-sm font-extrabold">
 															{line.quantity}
 														</span>
+
+														{/* UNLOCKED: Only disabled if max stock is reached */}
 														<button
 															type="button"
 															disabled={
-																busy ||
 																line.quantity >=
-																	line.stock
+																line.stock
 															}
 															onClick={() =>
-																void setQuantity(
+																handleOptimisticQuantity(
 																	line.id,
 																	line.quantity +
 																		1,
@@ -371,18 +374,18 @@ export default function CartDrawer() {
 					)}
 				</div>
 
-				{/* Footer */}
-				{lines.length > 0 && (
+				{optimisticLines.length > 0 && (
 					<div className="flex items-center justify-between gap-3 px-6 pb-8 pt-4">
 						<div>
 							<p className="font-display text-xs font-extrabold uppercase tracking-wide [font-stretch:125%]">
 								Subtotal
 							</p>
 							<p className="font-display text-2xl font-black [font-stretch:125%]">
-								{formatPrice(subtotal)}
+								{formatPrice(displaySubtotal)}
 							</p>
 						</div>
 
+						{/* LOCKED: Kept disabled={busy} here to prevent double-checkout routing */}
 						<button
 							type="button"
 							disabled={busy}

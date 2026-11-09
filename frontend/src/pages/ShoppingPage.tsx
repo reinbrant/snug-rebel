@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import { useCart } from "../context/cartContext";
@@ -27,9 +28,14 @@ const SORTERS: Record<SortKey, (a: Product, b: Product) => number> = {
 	"price-desc": (a, b) => effectivePrice(b) - effectivePrice(a),
 };
 
+// Global cache for instant reloads when navigating back and forth!
+let globalProductsCache: Product[] | null = null;
+
 export default function Shop() {
-	const [productsData, setProductsData] = useState<Product[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [productsData, setProductsData] = useState<Product[]>(
+		globalProductsCache || [],
+	);
+	const [loading, setLoading] = useState(!globalProductsCache);
 	const [error, setError] = useState<string | null>(null);
 	const navigate = useNavigate();
 
@@ -37,8 +43,14 @@ export default function Shop() {
 	const navbarHidden = useHideOnScroll();
 
 	useEffect(() => {
+		// If we already have cached data, we immediately skip the loader.
+		if (globalProductsCache) setLoading(false);
+
 		getProducts()
-			.then(setProductsData)
+			.then((data) => {
+				globalProductsCache = data;
+				setProductsData(data);
+			})
 			.catch((err) =>
 				setError(
 					err instanceof Error
@@ -144,7 +156,7 @@ export default function Shop() {
 		});
 	}, [productsData, sort, category, saleOnly]);
 
-	const { addItem, openCart } = useCart();
+	const { addItem } = useCart();
 
 	const handleBuyNow = (product: Product) => {
 		sessionStorage.setItem("shopScroll", window.scrollY.toString());
@@ -152,12 +164,12 @@ export default function Shop() {
 	};
 
 	const handleAddToCart = async (product: Product) => {
-		const ok = await addItem({ productId: product.id }, 1);
-		if (ok) openCart();
+		await addItem({ productId: product.id }, 1);
+		// openCart() intentionally removed here so the cart doesn't immediately interrupt the user!
 	};
 
 	return (
-		<div className="relative min-h-[calc(100vh-var(--nav-h))] bg-[#19191c] mt-0">
+		<div className="relative min-h-screen bg-[#19191c]">
 			<ShopSidebar
 				sort={sort}
 				onSortChange={setSort}
@@ -170,18 +182,16 @@ export default function Shop() {
 				navbarHidden={navbarHidden}
 			/>
 
-			{/* z-30 relative ensures this entire content area (including product cards and footer) slides OVER the fixed sidebar */}
 			<section
 				aria-label="Products"
 				className={[
 					"relative z-30 flex-1 flex flex-col w-full min-h-screen bg-neutral-200 px-6 pb-20 md:px-8 transition-all duration-300 shadow-[0_-10px_30px_rgba(0,0,0,0.15)]",
-					navbarHidden ? "pt-4" : "pt-4",
+					navbarHidden ? "pt-20" : "pt-[calc(var(--nav-h)+1.5rem)]",
 					sidebarOpen
 						? "md:ml-[280px] md:w-[calc(100%-280px)]"
 						: "ml-0 w-full",
 				].join(" ")}
 			>
-				{/* Sticky Filter Toggle */}
 				{!sidebarOpen && (
 					<div
 						className={[
