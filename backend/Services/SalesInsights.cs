@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace backend.Services;
 
-public record InsightOrder(DateTime PlacedAt, decimal Sales, string CustomerKey, string Province, string Country);
+public record InsightOrder(DateTime PlacedAt, decimal Sales, string CustomerKey, string Province, string Country, string? UserId = null);
 public record SalesMonth(string Month, decimal Sales, int Orders, bool Observed, decimal? PreviousYearSales);
 public record CustomerRegion(string Region, int Orders, int Customers, decimal Sales, decimal Share);
 public record InsightAction(string Title, string Evidence, string Action);
@@ -10,12 +10,13 @@ public record SalesForecast(bool Available, decimal? Sales, decimal? Lower, deci
 public record SalesInsightsResult(string GeneratedAt, int WindowDays, string PeriodStart, string PeriodEnd,
     int Orders, decimal Sales, decimal AverageOrderValue, decimal? SalesChangePercent,
     int Customers, int RepeatCustomers, int UnidentifiedOrders, List<CustomerRegion> Regions,
-    List<SalesMonth> Months, SalesForecast Forecast, List<InsightAction> Actions);
+    List<SalesMonth> Months, SalesForecast Forecast, List<InsightAction> Actions, DemographicSummary Demographics, SeasonalForecast SeasonalForecast);
 
 /// <summary>Deterministic estimates from completed Philippine calendar days; no external AI service.</summary>
 public static class SalesInsights
 {
-    public static SalesInsightsResult Calculate(IReadOnlyList<InsightOrder> source, DateTime utcNow, int windowDays)
+    public static SalesInsightsResult Calculate(IReadOnlyList<InsightOrder> source, DateTime utcNow, int windowDays,
+        IReadOnlyList<DemographicProfile>? profiles = null, DateTime? historyBeganUtc = null)
     {
         var today = utcNow.AddHours(8).Date;
         var historyStart = new DateTime(today.Year, today.Month, 1).AddMonths(-24);
@@ -25,7 +26,7 @@ public static class SalesInsights
         var current = orders.Where(o => o.PlacedAt >= start).ToList();
         var previous = orders.Where(o => o.PlacedAt >= start.AddDays(-windowDays) && o.PlacedAt < start).Sum(o => o.Sales);
         var sales = current.Sum(o => o.Sales);
-        var first = orders.Count > 0 ? orders.Min(o => o.PlacedAt) : today;
+        var first = historyBeganUtc?.AddHours(8).Date ?? (orders.Count > 0 ? orders.Min(o => o.PlacedAt) : today);
         decimal? change = previous > 0 && first <= start.AddDays(-windowDays)
             ? Math.Round((sales - previous) / previous * 100, 1) : null;
         var customers = current.Where(o => o.CustomerKey.Length > 0).GroupBy(o => o.CustomerKey).ToList();
@@ -80,9 +81,17 @@ public static class SalesInsights
         if (comparable != null)
             actions.Add(new("Plan around observed monthly demand", $"{comparable.Month} recorded ₱{comparable.Sales:0.00}, compared with ₱{comparable.PreviousYearSales:0.00} in the same month a year earlier.", "Compare repeated peaks in the monthly table before scheduling seasonal inventory or campaigns; one peak alone does not establish a seasonal pattern."));
         if (actions.Count == 0) actions.Add(new("Establish a sales baseline", $"{current.Count} qualifying orders in the last {windowDays} completed days.", "Review the monthly and customer breakdowns regularly and measure one merchandising or retention experiment at a time."));
+        var seasonal = SeasonalSalesForecast.Calculate(orders, today, first);
+        if (seasonal.Available)
+        {
+            var peak = seasonal.Months.MaxBy(m => m.Sales)!;
+            actions.Add(new("Prepare for forecast demand", $"{peak.Month} has the highest projected sales in the next six complete months: ₱{peak.Sales:0.00} (planning range ₱{peak.Lower:0.00}–₱{peak.Upper:0.00}).",
+                "Review inventory and fulfillment capacity ahead of this month, then revise the plan as new sales arrive."));
+        }
         return new(utcNow.ToString("O"), windowDays, start.ToString("yyyy-MM-dd"), today.AddDays(-1).ToString("yyyy-MM-dd"),
             current.Count, sales, current.Count > 0 ? Math.Round(sales / current.Count, 2) : 0, change,
-            customers.Count, repeat, current.Count(o => o.CustomerKey.Length == 0), regions, months, forecast, actions);
+            customers.Count, repeat, current.Count(o => o.CustomerKey.Length == 0), regions, months, forecast, actions,
+            DemographicAnalysis.Calculate(current, profiles ?? []), seasonal);
     }
 
     private static string Region(string province, string country) => string.IsNullOrWhiteSpace(province)

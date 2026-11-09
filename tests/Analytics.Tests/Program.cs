@@ -1,4 +1,6 @@
 using backend.Services;
+using backend.DTO;
+using System.ComponentModel.DataAnnotations;
 
 // Dependency-free regression checks; run: dotnet run --project tests/Analytics.Tests
 var now = new DateTime(2026, 11, 9, 4, 0, 0, DateTimeKind.Utc);
@@ -52,4 +54,49 @@ Check(annual.Months.Single(m => m.Month == "2025-01").Observed && annual.Months.
 Check(SalesInsights.CustomerKey(" GUEST@SNUGREBEL.LOCAL ", null) == "", "Anonymous placeholder must not merge guest customers");
 Check(SalesInsights.CustomerKey(" Buyer@Example.com ", null) == "email:buyer@example.com", "Email matching ignores casing and whitespace");
 Check(SalesInsights.CustomerKey(null, "user-1") == "user-1", "Account ID is a fallback identifier");
+
+var historyStart = new DateTime(today.Year, today.Month, 1).AddMonths(-24);
+var seasonalOrders = Enumerable.Range(0, (today - historyStart).Days)
+    .Select(day => { var date = historyStart.AddDays(day); return Order(date, date.Month == 12 ? 300 : 100); }).ToList();
+var seasonal = SalesInsights.Calculate(seasonalOrders, now, 90).SeasonalForecast;
+Check(seasonal.Available && seasonal.Months.Count == 6, "Two complete annual cycles enable six seasonal projections");
+Check(seasonal.Months.First().Month == "2026-12" && seasonal.Months.Last().Month == "2027-05", "Seasonal horizon starts with the next complete month and crosses years");
+var december = seasonal.Months.Single(m => m.Month == "2026-12");
+var february = seasonal.Months.Single(m => m.Month == "2027-02");
+Check(december.SeasonalIndex > february.SeasonalIndex && december.Sales > february.Sales, "Repeated December peaks affect the seasonal forecast");
+Check(seasonal.Months.All(m => m.Lower >= 0 && m.Lower <= m.Sales && m.Upper >= m.Sales), "Seasonal scenarios bound estimates and stay nonnegative");
+Check(!SalesInsights.Calculate(constant, now, 90).SeasonalForecast.Available, "Short history must not invent annual seasonality");
+Check(!SalesInsights.Calculate(seasonalOrders.Skip(1).ToList(), now, 90).SeasonalForecast.Available, "A partial oldest month cannot complete two annual cycles");
+var lowActivity = seasonalOrders.Where((_, index) => index % 30 == 0).ToList();
+Check(!SalesInsights.Calculate(lowActivity, now, 90, historyBeganUtc: Order(historyStart).PlacedAt).SeasonalForecast.Available, "Calendar coverage alone cannot enable a sparse seasonal forecast");
+var flatOrders = seasonalOrders.Select(o => o with { Sales = 100 }).ToList();
+var flatSeasonal = SalesInsights.Calculate(flatOrders, now, 90).SeasonalForecast;
+Check(flatSeasonal.Months.All(m => m.SeasonalIndex == 1), "Constant daily sales have no monthly factor despite different month lengths");
+Check(Math.Abs(flatSeasonal.Months[0].Sales / 31 - flatSeasonal.Months[2].Sales / 28) < .01m, "Monthly projection accounts for calendar month length");
+var quiet = SalesInsights.Calculate(seasonalOrders.Where(o => o.PlacedAt < today.AddDays(-91)).ToList(), now, 90);
+Check(quiet.SeasonalForecast.Available && quiet.SeasonalForecast.Months.All(m => m.Sales == 0), "Old seasonal peaks cannot invent demand after 90 quiet days");
+var zeroHistory = seasonalOrders.Select(o => o with { Sales = 0 }).ToList();
+Check(!SalesInsights.Calculate(zeroHistory, now, 90).SeasonalForecast.Available, "Free orders cannot establish revenue seasonality");
+var knownHistory = SalesInsights.Calculate(constant, now, 90, historyBeganUtc: Order(historyStart.AddMonths(-1)).PlacedAt);
+Check(knownHistory.Months.All(m => m.Observed), "Earlier known history preserves observed zero months in the retained window");
+
+var demographicOrders = new List<InsightOrder> {
+    Order(today.AddDays(-1)) with { UserId = "one" }, Order(today.AddDays(-2)) with { UserId = "one" },
+    Order(today.AddDays(-1)) with { UserId = "two" }, Order(today.AddDays(-1)) with { UserId = "three" },
+    Order(today.AddDays(-1)), Order(today.AddDays(-91)) with { UserId = "old" }
+};
+var demographicProfiles = new List<DemographicProfile> { new("one", "25-34", "woman"), new("two", null, "man"), new("old", "55+", "man") };
+var demographics = SalesInsights.Calculate(demographicOrders, now, 90, demographicProfiles).Demographics;
+Check(demographics.RegisteredCustomers == 3 && demographics.SharedProfiles == 2 && demographics.GuestOrders == 1, "Demographics count unique registered buyers within the reporting window");
+Check(demographics.AgeRanges.Single(b => b.Label == "25–34").Customers == 1, "Repeated orders do not multiply a demographic response");
+Check(demographics.AgeRanges.Single(b => b.Label == "Not shared").Customers == 2, "Unanswered age ranges and missing profiles remain visible");
+Check(demographics.Genders.Sum(b => b.Customers) == 3 && demographics.Genders.Single(b => b.Label == "Woman").Share == 33.3m, "Each demographic denominator includes all registered buyers");
+var withdrawn = SalesInsights.Calculate(demographicOrders, now, 90, []).Demographics;
+Check(withdrawn.SharedProfiles == 0 && withdrawn.Genders.Single(b => b.Label == "Not shared").Customers == 3, "Removing profile answers removes them from future aggregates");
+
+bool IsValid(DemographicsRequest request) => Validator.TryValidateObject(request, new ValidationContext(request), [], true);
+Check(IsValid(new() { ShareForAnalytics = true, AgeRange = "18-24" }), "Customers can share only one demographic answer");
+Check(!IsValid(new() { ShareForAnalytics = true, AgeRange = "invented" }), "Unsupported demographic values are rejected");
+Check(!IsValid(new() { ShareForAnalytics = true }), "Sharing requires at least one optional answer");
+Check(IsValid(new() { ShareForAnalytics = false }), "Customers can withdraw sharing with no replacement answers");
 Console.WriteLine($"Passed {passed} analytics regression checks.");

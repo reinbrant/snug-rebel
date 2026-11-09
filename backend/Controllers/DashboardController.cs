@@ -34,10 +34,12 @@ public class DashboardController : ControllerBase
         var start = DateTime.SpecifyKind(new DateTime(localToday.Year, localToday.Month, 1).AddMonths(-24).AddHours(-8), DateTimeKind.Utc);
         var end = DateTime.SpecifyKind(localToday.AddHours(-8), DateTimeKind.Utc);
         // Delivered includes cash-on-delivery sales. Pending and unpaid processing orders are excluded.
-        var data = await _context.Orders.AsNoTracking()
-            .Where(o => !o.IsTest && o.PlacedAt >= start && o.PlacedAt < end &&
+        var qualifying = _context.Orders.AsNoTracking()
+            .Where(o => !o.IsTest && o.PlacedAt < end &&
                 (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Delivered ||
-                    ((o.Status == OrderStatus.Processing || o.Status == OrderStatus.Shipped) && o.Payments.Any(p => p.Status == PaymentStatus.Paid))))
+                    ((o.Status == OrderStatus.Processing || o.Status == OrderStatus.Shipped) && o.Payments.Any(p => p.Status == PaymentStatus.Paid))));
+        var firstOrder = await qualifying.MinAsync(o => (DateTime?)o.PlacedAt, cancellationToken);
+        var data = await qualifying.Where(o => o.PlacedAt >= start)
             .Select(o => new {
                 o.PlacedAt,
                 Sales = Math.Max(0, o.TotalAmount - o.ShippingFee),
@@ -48,8 +50,11 @@ public class DashboardController : ControllerBase
             }).ToListAsync(cancellationToken);
         var orders = data.Select(o => new InsightOrder(o.PlacedAt, o.Sales,
             SalesInsights.CustomerKey(o.Email, o.FkUserId),
-            (o.Province ?? "").Trim().ToUpperInvariant(), (o.Country ?? "").Trim().ToUpperInvariant())).ToList();
-        return Ok(SalesInsights.Calculate(orders, now, days));
+            (o.Province ?? "").Trim().ToUpperInvariant(), (o.Country ?? "").Trim().ToUpperInvariant(), o.FkUserId)).ToList();
+        var buyerIds = data.Where(o => o.PlacedAt >= end.AddDays(-days) && o.FkUserId != null).Select(o => o.FkUserId!).Distinct().ToList();
+        var profiles = await _context.CustomerDemographics.AsNoTracking().Where(p => buyerIds.Contains(p.UserId))
+            .Select(p => new DemographicProfile(p.UserId, p.AgeRange, p.Gender)).ToListAsync(cancellationToken);
+        return Ok(SalesInsights.Calculate(orders, now, days, profiles, firstOrder));
     }
 
     [HttpGet("analytics")]

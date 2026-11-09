@@ -59,6 +59,7 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<Size> Sizes { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
+    public DbSet<CustomerDemographic> CustomerDemographics { get; set; }
 
     public virtual DbSet<EmailVerification> EmailVerifications { get; set; }
     public virtual DbSet<EmailOtp> EmailOtps { get; set; }
@@ -67,6 +68,20 @@ public partial class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<CustomerDemographic>(entity =>
+        {
+            entity.ToTable("customer_demographics", table =>
+            {
+                table.HasCheckConstraint("ck_demographics_age", "age_range IS NULL OR age_range IN ('under18', '18-24', '25-34', '35-44', '45-54', '55+')");
+                table.HasCheckConstraint("ck_demographics_gender", "gender IS NULL OR gender IN ('woman', 'man', 'nonbinary', 'another')");
+            });
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.UserId).HasColumnName("_fk_user_id").HasMaxLength(40);
+            entity.Property(e => e.AgeRange).HasColumnName("age_range").HasMaxLength(20);
+            entity.Property(e => e.Gender).HasColumnName("gender").HasMaxLength(20);
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp without time zone");
+            entity.HasOne<User>().WithOne().HasForeignKey<CustomerDemographic>(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.HasSequence("order_number_seq").StartsAt(1000L);
 
         modelBuilder.Entity<Address>(entity =>

@@ -3,6 +3,11 @@ import { requestJson } from '../lib/config'
 import './PredictiveAnalytics.css'
 
 type Month = { month: string; sales: number; orders: number; observed: boolean; previousYearSales: number | null }
+type DemographicBucket = { label: string; customers: number; share: number }
+type SeasonalForecast = {
+  available: boolean; message: string; completeMonths: number; historyOrders: number; method: string
+  months: { month: string; sales: number; lower: number; upper: number; orders: number; seasonalIndex: number }[]
+}
 type Insights = {
   generatedAt: string; windowDays: number; periodStart: string; periodEnd: string
   orders: number; sales: number; averageOrderValue: number; salesChangePercent: number | null
@@ -11,6 +16,8 @@ type Insights = {
   months: Month[]
   forecast: { available: boolean; sales: number | null; lower: number | null; upper: number | null; orders: number | null; historyDays: number; historyOrders: number; method: string }
   actions: { title: string; evidence: string; action: string }[]
+  demographics?: { registeredCustomers: number; sharedProfiles: number; guestOrders: number; ageRanges: DemographicBucket[]; genders: DemographicBucket[] }
+  seasonalForecast?: SeasonalForecast
 }
 
 const money = (value: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value)
@@ -67,6 +74,20 @@ export function PredictiveAnalytics() {
         <details><summary>How this estimate works</summary><p>{data.forecast.method}</p><p>Estimates assume recent buying patterns continue. Promotions, stockouts, holidays and future cancellations can change the outcome.</p></details>
       </article>
 
+      {data.seasonalForecast ? <SeasonalForecastPanel forecast={data.seasonalForecast} /> : <p className="insights-message">Seasonal projections require the latest backend deployment.</p>}
+
+      <article className="panel-card">
+        <p className="eyebrow">Optional profile responses</p><h3>Age & gender</h3>
+        {data.demographics ? <>
+          <p className="insights-caption">{data.demographics.sharedProfiles} of {data.demographics.registeredCustomers} registered buyers shared profile answers · Last {data.windowDays} completed days. {data.demographics.guestOrders} guest orders are excluded from these breakdowns.</p>
+          <div className="insights-columns insights-demographic-groups">
+            <DemographicChart title="Age range" buckets={data.demographics.ageRanges} />
+            <DemographicChart title="Gender" buckets={data.demographics.genders} />
+          </div>
+          <p className="insights-caption">Counts use unique registered buyers and their current, self-reported profile answers. Each share uses all registered buyers as its denominator, including “Not shared.” These responses may not represent all customers.</p>
+        </> : <p className="insights-message">Profile demographics require the latest backend deployment.</p>}
+      </article>
+
       <div className="insights-columns">
         <article className="panel-card insights-seasonal">
           <div className="insights-heading"><div><p className="eyebrow">Seasonal sales</p><h3>24 completed months</h3></div>
@@ -89,7 +110,7 @@ export function PredictiveAnalytics() {
           <p className="insights-caption">Shipping province and country · Last {data.windowDays} completed days</p>
           {data.regions.length ? <div className="table-wrap"><table><thead><tr><th>Region</th><th>Orders</th><th>Share</th><th>Sales</th></tr></thead><tbody>{data.regions.map(region => <tr key={region.region}><th scope="row">{region.region}</th><td>{region.orders}</td><td>{region.share}%</td><td>{money(region.sales)}</td></tr>)}</tbody></table></div> : <p className="insights-message">No qualifying orders in this period.</p>}
           <p className="insights-caption">{data.customers} identifiable customers; {data.customers - data.repeatCustomers} ordered once and {data.repeatCustomers} ordered multiple times within this period. {data.unidentifiedOrders} orders have no customer identifier.</p>
-          <p className="insights-caption">Customers are matched by email, falling back to account ID. Age and gender are unavailable because they are not collected.</p>
+          <p className="insights-caption">Purchase behavior is matched by email, falling back to account ID. Optional profile demographics are grouped separately by registered account.</p>
         </article>
       </div>
 
@@ -100,9 +121,37 @@ export function PredictiveAnalytics() {
       <details className="panel-card insights-definitions"><summary>Data coverage & definitions</summary>
         <p>Sales are order totals less shipping charges, after discounts. Includes paid orders, delivered orders (including cash on delivery), and processing/shipped orders with a paid payment. Excludes pending, cancelled, refunded and test orders. Dates use order placement time; today is excluded to avoid partial-day comparisons.</p>
         <p>Up to 24 completed months plus the current month are analyzed. A zero after the first qualifying order means no qualifying sales recorded; earlier months show no history. Repeat customers purchased more than once within the selected period; this is not a lifetime retention rate. Prior-year comparisons need recorded history for that month.</p>
-        <p>Recommendations are automatic rules based on observed changes, customer behavior and geographic concentration. Forecasts use recent weekday averages and do not establish annual seasonality.</p>
+        <p>Recommendations are automatic rules based on observed changes, customer behavior, geographic concentration and available seasonal projections. The 30-day forecast uses weekday averages; six-month seasonal projections use two completed annual cycles. Forecasts are planning estimates.</p>
         <p>Updated {new Date(data.generatedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (Philippine time).</p>
       </details>
     </>}
   </section>
+}
+
+function DemographicChart({ title, buckets }: { title: string; buckets: DemographicBucket[] }) {
+  return <section aria-label={title}><h4>{title}</h4><ul className="insights-demographic-bars">{buckets.map(bucket => <li key={bucket.label}>
+    <div><span>{bucket.label}</span><strong>{bucket.customers} <small>({bucket.share}%)</small></strong></div>
+    <div className="insights-demographic-track" aria-hidden="true"><span style={{ width: `${bucket.share}%` }} /></div>
+  </li>)}</ul></section>
+}
+
+function SeasonalForecastPanel({ forecast }: { forecast: SeasonalForecast }) {
+  const [metric, setMetric] = useState<'sales' | 'orders'>('sales')
+  const max = Math.max(1, ...forecast.months.map(month => month[metric]))
+  return <article className="panel-card insights-seasonal-forecast" aria-labelledby="seasonal-forecast-heading">
+    <div className="insights-heading"><div><p className="eyebrow">Seasonal forecasting</p><h3 id="seasonal-forecast-heading">Next six complete months</h3></div>
+      {forecast.available && <label className="insights-period">Forecast measure<select value={metric} onChange={event => setMetric(event.target.value as 'sales' | 'orders')}><option value="sales">Sales (PHP)</option><option value="orders">Orders</option></select></label>}
+    </div>
+    <p className="insights-caption">{forecast.message}</p>
+    {forecast.available ? <>
+      <div className="insights-chart-scroll"><div className="insights-chart insights-future-chart" role="group" aria-label={`Seasonal ${metric} projections`}>
+        {forecast.months.map(month => <div key={month.month} className="insights-future-bar" tabIndex={0} aria-label={`${monthLabel(month.month)}: ${money(month.sales)} projected sales, ${month.orders} projected orders, seasonal factor ${month.seasonalIndex}`} title={`Planning range ${money(month.lower)}–${money(month.upper)}`}>
+          <strong>{metric === 'sales' ? money(month.sales) : month.orders.toLocaleString()}</strong>
+          <span className="insights-bar-track"><span style={{ height: `${Math.max(1, month[metric] / max * 100)}%` }} /></span><span>{monthLabel(month.month)}</span>
+        </div>)}
+      </div></div>
+      <div className="table-wrap"><table><caption className="insights-caption">Estimated demand, not confirmed sales. Factor 1× means typical daily demand; 1.5× means 50% above the model's usual daily level.</caption><thead><tr><th>Month</th><th>Sales estimate</th><th>Planning range</th><th>Orders</th><th>Seasonal factor</th></tr></thead><tbody>{forecast.months.map(month => <tr key={month.month}><th scope="row">{monthLabel(month.month)}</th><td>{money(month.sales)}</td><td>{money(month.lower)} – {money(month.upper)}</td><td>{month.orders}</td><td>{month.seasonalIndex}×</td></tr>)}</tbody></table></div>
+    </> : <p className="insights-message">Available coverage: {forecast.completeMonths}/24 complete months · {forecast.historyOrders}/60 qualifying orders. Seasonal estimates also need activity in 18 months and 10 orders in each annual cycle.</p>}
+    <details><summary>Seasonal method & limitations</summary><p>{forecast.method}</p></details>
+  </article>
 }

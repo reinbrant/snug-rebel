@@ -49,3 +49,7 @@ The storefront URL includes `/api`; the admin URL does not. Vite embeds these pu
 Apply Vercel variables to the deployment environments you use (Production and optionally Preview), then redeploy. Changes apply to new deployments. [Vercel environment variables](https://vercel.com/docs/environment-variables)
 
 Run `backend/SQL/email_verification.sql` and then `backend/SQL/email_otp.sql` in Neon before deploying OTP support. See [email verification setup](EMAIL_VERIFICATION.md).
+
+For demographic collection and seasonal analytics, run `backend/SQL/customer_demographics.sql`
+in Neon before deploying the backend, then redeploy both Vercel projects (`admin` and
+`frontend`). No additional environment variables are needed. See [analytics setup](ANALYTICS.md).

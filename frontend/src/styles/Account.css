@@ -9,7 +9,12 @@
 .account-card form { margin-top: 1.5rem; }
 .account-card fieldset { border: 0; min-width: 0; }
 .account-field { display: flex; flex-direction: column; gap: .4rem; margin-bottom: 1rem; font-size: .875rem; font-weight: 700; min-width: 0; }
-.account-field input { min-width: 0; width: 100%; border: 1.5px solid #777; background: white; border-radius: 0; padding: .75rem; font-size: 1rem; font-weight: 400; }
+.account-field input, .account-field select { min-width: 0; width: 100%; border: 1.5px solid #777; background: white; border-radius: 0; padding: .75rem; font-size: 1rem; font-weight: 400; color: #141414; }
+.account-field select:focus-visible { outline: 3px solid #9f0a0a; outline-offset: 3px; }
+.account-demographics { border-top: 1px solid #ccc; padding-top: 1.5rem; margin-top: 1.5rem; }
+.account-demographics h2 span { font-size: .8rem; font-weight: 500; }
+.account-demographics > .account-hint { margin: .75rem 0 1rem; line-height: 1.5; }
+.account-field select:disabled { opacity: .6; }
 .account-field input:focus-visible, .account-button:focus-visible, .account-page a:focus-visible { outline: 3px solid #9f0a0a; outline-offset: 3px; }
 .account-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .account-checkbox { display: flex; align-items: center; gap: .5rem; font-size: .875rem; margin: .5rem 0 1.5rem; }

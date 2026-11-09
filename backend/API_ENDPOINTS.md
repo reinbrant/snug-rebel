@@ -673,7 +673,8 @@ with a Paid payment. Pending, Cancelled and Refunded orders are excluded. Sales 
 sales view, not a payment settlement report. Repeat customers have multiple qualifying
 orders within the selected period and are matched by normalized email, falling back to
 account ID. The legacy `guest@snugrebel.local` placeholder is treated as unidentified.
-Age and gender are not collected and cannot be analyzed.
+Age range and gender are optionally collected from signed-in customers at
+`/api/Account/demographics` and returned only as grouped counts in dashboard insights.
 
 The forecast averages each weekday over up to eight completed weeks, including zero-sale
 days. It requires at least 28 observed days and 10 qualifying orders in that window.
@@ -684,4 +685,22 @@ seasonality; recurring seasonal patterns require more history. The first observe
 may have partial coverage. Growth comparisons are withheld until both selected periods
 have history. Test with `dotnet run --project tests/Analytics.Tests`.
 
-No new environment variables, paid providers, scheduled jobs, or database migrations are required.
+The response also includes `demographics` (registered buyer coverage, age and gender
+counts, and unshared answers) and `seasonalForecast` (six complete future months of sales,
+order estimates, sales planning ranges and seasonal factors). Seasonal forecasting requires
+24 complete months, at least 60 qualifying orders, activity in 18 months, at least 10 orders
+in each annual block, and positive sales in each block. It adjusts recent 90-day demand
+using moderated month-of-year factors learned from the last two completed annual cycles.
+It does not predict specific holiday or campaign effects. See [analytics setup](../ANALYTICS.md).
+
+`GET /api/Account/demographics` and `PUT /api/Account/demographics` require a session and
+always operate on the current user; no user ID is accepted. PUT accepts
+`{ "shareForAnalytics": true, "ageRange": "25-34", "gender": "woman" }`.
+Either answer may be null. Age values: `under18`, `18-24`, `25-34`, `35-44`, `45-54`, `55+`.
+Gender values: `woman`, `man`, `nonbinary`, `another`. With sharing on, at least one answer
+is required. Setting `shareForAnalytics` to false deletes the stored answers. Profile
+endpoints return only the signed-in customer's answers; the insights response contains no
+individual demographic records.
+
+Run `backend/SQL/customer_demographics.sql` before deploying these changes. No new
+environment variables, paid providers or scheduled jobs are required.

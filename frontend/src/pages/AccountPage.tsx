@@ -6,6 +6,7 @@ import { useAuth } from '../context/authContext'
 import { formatPrice } from '../helpers/priceFormat'
 import { ROUTES } from '../routes'
 import '../styles/Account.css'
+import DemographicsForm from '../components/DemographicsForm'
 
 type CustomerOrder = {
   pkOrderId: string; orderNumber: string; placedAt: string; status: string; totalAmount: number
@@ -51,7 +52,7 @@ export default function AccountPage() {
         <dt>Name</dt><dd>{auth.user.firstName} {auth.user.lastName}</dd>
         <dt>Email</dt><dd>{auth.user.userEmail}</dd>
         {auth.user.phoneNumber && <><dt>Phone</dt><dd>{auth.user.phoneNumber}</dd></>}
-      </dl><Link to={ROUTES.shop} className="account-text-link">Back to the shop →</Link></aside>
+      </dl><DemographicsForm key={auth.user.pkUserId} /><Link to={ROUTES.shop} className="account-text-link">Back to the shop →</Link></aside>
       <div className="account-card"><h2>Your orders</h2>
         {loadingOrders ? <p role="status">Loading your orders…</p> : ordersError ? <div><p className="account-error" role="alert">{ordersError}</p><button className="account-button account-button-outline" onClick={() => { setLoadingOrders(true); setVersion(v => v + 1) }}>Retry orders</button></div> : orders.length === 0 ? <p>No orders yet. Your next favorite is in the shop.</p> :
           <ul className="account-orders">{orders.map(order => <li key={order.pkOrderId}>
