@@ -14,6 +14,7 @@ import { Star, X } from "lucide-react";
 import star_bg from "../assets/star_bg.jpg";
 import order_divider from "../assets/order_divider.png";
 import { ApiError, apiFetch } from "../api/api";
+import { authErrorMessage } from "../api/auth";
 import { trackOrder } from "../api/orders";
 import type { OrderTracking } from "../api/orders";
 import { formatPrice } from "../helpers/priceFormat";
@@ -247,7 +248,7 @@ export default function OrderTrackingPage() {
 	const { user } = useAuth();
 	const [authItems, setAuthItems] = useState<TrackingItem[] | null>(null);
 	const [loadingItems, setLoadingItems] = useState(false);
-	const [reviewItem, setReviewItem] = useState<any | null>(null);
+	const [reviewItem, setReviewItem] = useState<TrackingItem | null>(null);
 
 	useEffect(() => {
 		const userId = user?.pkUserId;
@@ -415,10 +416,9 @@ export default function OrderTrackingPage() {
 		[order.shipTo.city, order.shipTo.province].filter(Boolean).join(", "),
 	].filter(Boolean);
 
-	const extendedOrder = order as OrderTracking & { items?: TrackingItem[] };
-	const itemsToRender =
-		(extendedOrder.items && extendedOrder.items.length > 0
-			? extendedOrder.items
+	const itemsToRender: TrackingItem[] =
+		(order.items.length > 0
+			? order.items
 			: null) ??
 		authItems ??
 		[];
@@ -786,7 +786,7 @@ export default function OrderTrackingPage() {
 	);
 }
 
-function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
+function ReviewModal({ item, onClose }: { item: TrackingItem; onClose: () => void }) {
 	const { user } = useAuth();
 	const [rating, setRating] = useState(5);
 	const [hoverRating, setHoverRating] = useState<number | null>(null);
@@ -804,17 +804,8 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 	const handleSubmit = async () => {
 		if (!user?.pkUserId) return setError("You must be logged in.");
 
-		const resolvedProductId =
-			item.productId || 
-			item.ProductId || 
-			item.fkProductId || 
-			item.FkProductId;
-		const resolvedOrderItemId =
-			item.orderItemId || 
-			item.OrderItemId || 
-			item.pkOrderItemId || 
-			item.PkOrderItemId || 
-			item.id;
+		const resolvedProductId = item.productId;
+		const resolvedOrderItemId = item.orderItemId || item.pkOrderItemId;
 
 		if (!resolvedProductId || !resolvedOrderItemId)
 			return setError("Missing item reference IDs.");
@@ -834,8 +825,8 @@ function ReviewModal({ item, onClose }: { item: any; onClose: () => void }) {
 				}),
 			});
 			onClose();
-		} catch (err: any) {
-			setError(err.message || "Failed to submit review.");
+		} catch (err: unknown) {
+			setError(authErrorMessage(err));
 			setSubmitting(false);
 		}
 	};

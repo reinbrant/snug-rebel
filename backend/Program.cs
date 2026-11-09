@@ -34,7 +34,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         var id = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
         var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
         var user = id == null ? null : await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.PkUserId == id);
-        if (user == null || !user.IsActive || (user.EmailVerificationRequired && user.EmailVerifiedAt == null))
+        if (user == null || !user.IsActive || (user.EmailVerificationRequired && user.EmailVerifiedAt == null)
+            || context.Principal?.FindFirstValue(PasswordSession.ClaimType) != PasswordSession.Version(user.PasswordHash))
         {
             context.RejectPrincipal();
             await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

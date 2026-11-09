@@ -16,6 +16,17 @@ export type ShipmentStatusName =
     | "Returned";
 
 /** What the tracking page needs to know about one order. Dates are ISO strings (UTC). */
+export interface OrderTrackingItem {
+    orderItemId: string;
+    productId: string;
+    productName: string;
+    sizeLabel: string;
+    colorName: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+}
+
 export interface OrderTracking {
     orderNumber: string;
     status: OrderStatusName;
@@ -34,6 +45,7 @@ export interface OrderTracking {
     /** Privacy-trimmed on the server: first name + last initial, no street or phone. */
     shipTo: { name: string; barangay: string; city: string; province: string };
     events: { status: OrderStatusName; at: string }[];
+    items: OrderTrackingItem[];
 }
 
 // Same switch the items, products and checkout modules use.
@@ -66,7 +78,7 @@ const asTextOrNull = (v: unknown) =>
  * Safety net for the server response: a missing or unexpected field
  * becomes a safe default instead of crashing the page.
  */
-function normalize(raw: Partial<OrderTracking>): OrderTracking {
+export function normalize(raw: Partial<OrderTracking>): OrderTracking {
     const status = ORDER_STATUSES.includes(raw.status as OrderStatusName)
         ? (raw.status as OrderStatusName)
         : "Pending";
@@ -91,6 +103,12 @@ function normalize(raw: Partial<OrderTracking>): OrderTracking {
         shipmentStatus,
         shippedAt: asTextOrNull(raw.shippedAt),
         deliveredAt: asTextOrNull(raw.deliveredAt),
+        items: Array.isArray(raw.items) ? raw.items.filter(Boolean).map(item => ({
+            orderItemId: asText(item.orderItemId), productId: asText(item.productId),
+            productName: asText(item.productName), sizeLabel: asText(item.sizeLabel),
+            colorName: asText(item.colorName), quantity: asNumber(item.quantity),
+            unitPrice: asNumber(item.unitPrice), lineTotal: asNumber(item.lineTotal),
+        })) : [],
         shipTo: {
             name: asText(raw.shipTo?.name),
             barangay: asText(raw.shipTo?.barangay),
@@ -165,6 +183,7 @@ function mockOrder(
             province: "Metro Manila",
         },
         events: [],
+        items: [],
     };
 }
 

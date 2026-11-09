@@ -31,6 +31,24 @@ For hosted environments, set `VITE_API_BASE_URL` for the admin and `VITE_API_URL
 
 ## Customer accounts
 
+### Forgot password
+
+Run `backend/SQL/password_reset.sql` after `backend/SQL/email_otp.sql` before
+deploying password recovery. It adds the `password-reset` OTP purpose to the
+existing database constraint and is safe to repeat. The existing Brevo email
+settings also send reset emails; no additional provider variables are needed.
+
+Customers can choose **Forgot password?** on `/sign-in`, receive a six-digit
+email code, and set a new password at `/forgot-password`. Codes expire after
+10 minutes, allow five attempts, and can be requested once per minute per
+account. A completed reset invalidates existing sessions and outstanding
+email sign-in codes. Unverified accounts still need email verification.
+The session-version update also requires existing users to sign in again once
+after deployment. Admin and staff recovery is outside this customer flow.
+
+Run `python tests/FeatureFlows/run.py` for recovery and review regressions;
+see `tests/FeatureFlows/README.md` for its local prerequisites.
+
 The storefront account icon opens `/sign-in`, `/sign-up`, or `/account`. New customers must verify their email before signing in. Existing accounts retain access. Sessions use the backend's HttpOnly cookie; account data and passwords are not stored in browser local storage. Both the admin and customer frontend must send credentialed requests to the configured API.
 
 A guest bag transfers into the customer account on sign-in after verification. If the customer already has a bag, matching variant quantities are combined; checkout continues to enforce available stock. Signing out starts a fresh guest bag and preserves the account bag for the next sign-in. Account checkout is associated with the server-validated customer, and the account page shows that customer's order history. Guest checkout is still available.

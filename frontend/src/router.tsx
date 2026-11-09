@@ -11,6 +11,7 @@ import AuthPage from './pages/AuthPage.tsx'
 import AccountPage from './pages/AccountPage.tsx'
 import AboutUs from './pages/AboutUs.tsx'
 import VerifyEmailPage from './pages/VerifyEmailPage.tsx'
+import ForgotPasswordPage from './pages/ForgotPasswordPage.tsx'
 
 /** Route table. Swap each PlaceholderPage for the real page when it is made. */
 export const router = createBrowserRouter([
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
             { path: ROUTES.signUp, element: <AuthPage key="sign-up" mode="sign-up" /> },
             { path: ROUTES.account, element: <AccountPage /> },
             { path: ROUTES.verifyEmail, element: <VerifyEmailPage /> },
+            { path: ROUTES.forgotPassword, element: <ForgotPasswordPage /> },
 			{ path: ROUTES.about, element: <AboutUs /> },
 			{ path: ROUTES.tracking, element: <OrderTrackingPage/> },
 			{ path: "*", element: <PlaceholderPage title="Page not found" /> },

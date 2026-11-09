@@ -300,6 +300,14 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             </p>
 
             {!registering && (
+              <Link to={`${ROUTES.forgotPassword}?returnTo=${encodeURIComponent(returnTo)}`}
+                state={{ email: form.email.trim(), checkoutState }}
+                className="text-xs lg:text-sm font-bold text-[#e60000] hover:underline">
+                Forgot password?
+              </Link>
+            )}
+
+            {!registering && (
               <button 
                 type="button" 
                 disabled={busy} 

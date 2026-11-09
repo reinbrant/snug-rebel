@@ -52,3 +52,14 @@ public class OtpLoginRequest : VerifyEmailCodeRequest
 {
     [MaxLength(100)] public string? SessionToken { get; set; }
 }
+
+public class ResetPasswordRequest : VerifyEmailCodeRequest, IValidatableObject
+{
+    [Required, MinLength(8)] public string Password { get; set; } = "";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext context)
+    {
+        if (Encoding.UTF8.GetByteCount(Password ?? "") > 72)
+            yield return new ValidationResult("Password must be at most 72 UTF-8 bytes.", [nameof(Password)]);
+    }
+}

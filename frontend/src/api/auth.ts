@@ -36,6 +36,14 @@ export const signUp = ({ firstName, lastName, email, password, phoneNumber }: Re
 
 export const signOut = () => apiFetch<void>('/Auth/logout', { method: 'POST' })
 
+export const requestPasswordReset = (email: string) => apiFetch<{ message: string }>('/Auth/forgot-password', {
+    method: 'POST', body: JSON.stringify({ email: email.trim() }),
+})
+
+export const resetPassword = (email: string, code: string, password: string) => apiFetch<{ message: string }>('/Auth/reset-password', {
+    method: 'POST', body: JSON.stringify({ email: email.trim(), code, password }),
+})
+
 export const resendVerification = (email: string) => apiFetch<{ message: string }>('/Auth/resend-verification', {
     method: 'POST', body: JSON.stringify({ email: email.trim() }),
 })
