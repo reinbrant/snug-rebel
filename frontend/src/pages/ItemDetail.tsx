@@ -264,17 +264,6 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 							{item.description}
 						</p>
 
-						{item.colors.length > 0 && (
-							<div>
-								<p
-									id="item-colors-label"
-									className={fieldLabel}
-								>
-									Colors
-								</p>
-							</div>
-						)}
-
 						{item.sizes.length > 0 && (
 							<div>
 								<p id="item-size-label" className={fieldLabel}>
