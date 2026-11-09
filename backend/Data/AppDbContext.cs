@@ -60,6 +60,9 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<User> Users { get; set; }
 
+    public virtual DbSet<EmailVerification> EmailVerifications { get; set; }
+    public virtual DbSet<EmailOtp> EmailOtps { get; set; }
+
     public virtual DbSet<WishlistItem> WishlistItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -905,6 +908,34 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(10)
                 .HasColumnName("label");
             entity.Property(e => e.SortOrder).HasColumnName("sort_order");
+        });
+
+        modelBuilder.Entity<EmailOtp>(entity =>
+        {
+            entity.ToTable("email_otps");
+            entity.HasKey(e => new { e.UserId, e.Purpose });
+            entity.Property(e => e.UserId).HasColumnName("_fk_user_id").HasMaxLength(60);
+            entity.Property(e => e.Purpose).HasColumnName("purpose").HasMaxLength(20);
+            entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(255);
+            entity.HasIndex(e => new { e.Email, e.Purpose }).IsUnique();
+            entity.Property(e => e.CodeHash).HasColumnName("code_hash").HasMaxLength(60);
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").HasColumnType("timestamp without time zone");
+            entity.Property(e => e.SentAt).HasColumnName("sent_at").HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Attempts).HasColumnName("attempts");
+            entity.HasOne<User>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailVerification>(entity =>
+        {
+            entity.ToTable("email_verifications");
+            entity.HasKey(e => e.UserId).HasName("email_verifications_pkey");
+            entity.Property(e => e.UserId).HasColumnName("_fk_user_id").HasMaxLength(60);
+            entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(255);
+            entity.Property(e => e.TokenHash).HasColumnName("token_hash").HasMaxLength(64);
+            entity.HasIndex(e => e.TokenHash, "ix_email_verifications_token_hash").IsUnique();
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").HasColumnType("timestamp without time zone");
+            entity.Property(e => e.SentAt).HasColumnName("sent_at").HasColumnType("timestamp without time zone");
+            entity.HasOne<User>().WithOne().HasForeignKey<EmailVerification>(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<User>(entity =>

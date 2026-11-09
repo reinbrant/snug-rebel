@@ -29,4 +29,26 @@ public class LoginRequest
 }
 
 public record AuthUserDTO(string PkUserId, string UserEmail, string FirstName,
-    string LastName, string PhoneNumber, string Role, bool IsActive);
+    string LastName, string PhoneNumber, string Role, bool IsActive, bool EmailVerified);
+
+public class ResendVerificationRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; set; } = "";
+}
+
+public class VerifyEmailRequest
+{
+    [Required, StringLength(43, MinimumLength = 43), RegularExpression("^[A-Za-z0-9_-]+$")]
+    public string Token { get; set; } = "";
+}
+
+public class VerifyEmailCodeRequest : ResendVerificationRequest
+{
+    [Required, RegularExpression("^[0-9]{6}$")]
+    public string Code { get; set; } = "";
+}
+
+public class OtpLoginRequest : VerifyEmailCodeRequest
+{
+    [MaxLength(100)] public string? SessionToken { get; set; }
+}

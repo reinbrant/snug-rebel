@@ -1,0 +1,8 @@
+# Keep local secrets out of the Docker build context and published application.
+.env
+.env.*
+appsettings.json
+bin/
+obj/
+wwwroot/uploads/
+.git/

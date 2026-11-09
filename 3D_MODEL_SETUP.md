@@ -276,16 +276,16 @@ function Display3DModel({ modelUrl }) {
 
 For security, use environment variables instead of storing credentials in code:
 
-**Backend (.env or environment-specific appsettings):**
+**Backend (Render environment variables):**
 ```
 Cloudinary__CloudName=your-cloud-name
 Cloudinary__ApiKey=your-api-key
 Cloudinary__ApiSecret=your-api-secret
 ```
 
-**Frontend (.env.local):**
+**Admin (Vercel environment variables):**
 ```
-VITE_API_BASE_URL=http://localhost:5000
+VITE_API_BASE_URL=https://your-api.onrender.com
 ```
 
 ## Troubleshooting

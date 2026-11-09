@@ -1,5 +1,7 @@
 # 3D Model Feature - Deployment Guide
 
+For the current Render and Vercel environment variable list, see [ENVIRONMENT.md](ENVIRONMENT.md).
+
 ## ? You're Ready to Deploy!
 
 Your code is complete and compiled. You only need to:

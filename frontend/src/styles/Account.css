@@ -20,8 +20,14 @@
 .account-button:disabled { opacity: .55; cursor: wait; }
 .account-button-outline { background: white; color: #141414; }
 .account-error { color: #9f0a0a; background: #fff0f0; border-left: 3px solid #9f0a0a; padding: .875rem; margin: 1rem 0; line-height: 1.5; }
+.account-notice { color: #195d31; background: #eff8f1; border-left: 3px solid #195d31; padding: .875rem; margin: 1rem 0; line-height: 1.5; }
+.verification-resend-heading { margin-top: 2rem; font-size: 1rem; font-weight: 800; }
+.account-card > .account-button { margin-top: 1.25rem; }
 .account-hint { font-size: .75rem; color: #555; margin: -.5rem 0 1rem; }
 .account-text-link, .account-switch a, .account-order-head a { font-weight: 800; text-decoration: underline; text-underline-offset: .2rem; }
+.account-page button.account-text-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-weight: 800; cursor: pointer; }
+.account-page button.account-text-link:focus-visible { outline: 3px solid #9f0a0a; outline-offset: 3px; }
+.account-page button.account-text-link:disabled { opacity: .55; cursor: wait; }
 .account-switch { margin-top: 1.5rem; font-size: .875rem; }
 .account-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
 .account-grid { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 2rem; align-items: start; }

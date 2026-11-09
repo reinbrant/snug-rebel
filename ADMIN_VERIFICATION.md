@@ -4,7 +4,7 @@ Verified against the configured Neon database, using temporary records that were
 
 ## Automated API checks
 
-Reproduce with `python3 scripts/verify_admin.py` while the development API is running.
+Historical results from the one-off admin verification suite, which has since been removed.
 
 - Login failure/success, customer rejection from admin endpoints, HttpOnly cookie session, logout, and protected product writes/reads.
 - Categories: create, update, duplicate conflict, and deletion protection while assigned to products.

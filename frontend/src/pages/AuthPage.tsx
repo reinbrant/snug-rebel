@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { authErrorMessage } from '../api/auth'
+import { ApiError } from '../api/api'
+import VerificationEmailForm from '../components/VerificationEmailForm'
+import EmailCodeSignIn from '../components/EmailCodeSignIn'
 import { useAuth } from '../context/authContext'
 import { ROUTES } from '../routes'
 import '../styles/Account.css'
@@ -24,6 +27,8 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null)
+  const [useCode, setUseCode] = useState(false)
 
   if (auth.status === 'loading') return <div className="account-page" role="status">Checking your session…</div>
   if (auth.user) return <Navigate to={returnTo} replace state={checkoutState} />
@@ -34,10 +39,18 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     if (new TextEncoder().encode(form.password).length > 72) { setError('Your password must be at most 72 UTF-8 bytes.'); return }
     setBusy(true)
     try {
-      if (registering) await auth.signUp(form)
-      else await auth.signIn(form.email, form.password)
-      navigate(returnTo, { replace: true, state: checkoutState })
-    } catch (error) { setError(authErrorMessage(error)) }
+      if (registering) {
+        const result = await auth.signUp(form)
+        setVerificationEmail(result.email)
+        setForm(current => ({ ...current, password: '', confirmPassword: '' }))
+      } else {
+        await auth.signIn(form.email, form.password)
+        navigate(returnTo, { replace: true, state: checkoutState })
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'EmailNotVerified') setVerificationEmail(form.email.trim())
+      else setError(authErrorMessage(error))
+    }
     finally { setBusy(false) }
   }
 
@@ -60,9 +73,16 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
       <Link to={ROUTES.shop} className="account-text-link">Explore the shop →</Link>
     </div>
     <div className="account-card">
+      {verificationEmail ? <>
+        <h2>Check your email</h2>
+        <p>Verify <strong>{verificationEmail}</strong> using the code or link in your inbox, then sign in.</p>
+        <p>Check your spam folder too. Please allow a minute between email requests.</p>
+        <VerificationEmailForm initialEmail={verificationEmail} />
+        <p className="account-switch"><Link to={`${ROUTES.signIn}?returnTo=${encodeURIComponent(returnTo)}`} state={{ checkoutState }} onClick={() => setVerificationEmail(null)}>Back to sign in</Link></p>
+      </> : <>
       <h2>{registering ? 'Create an account' : 'Sign in'}</h2>
       <p>{registering ? 'Make yourself at home.' : 'Your next favorite is waiting.'}</p>
-      <form onSubmit={submit}>
+      {!registering && useCode ? <EmailCodeSignIn onSignedIn={() => navigate(returnTo, { replace: true, state: checkoutState })} /> : <form onSubmit={submit}>
         <fieldset disabled={busy}>
           {registering && <div className="account-field-row">
             {field('firstName', 'First name', 'text', 'given-name')}
@@ -77,12 +97,18 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           {error && <p className="account-error" role="alert">{error}</p>}
           <button type="submit" className="account-button" disabled={busy}>{busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}</button>
         </fieldset>
-      </form>
+      </form>}
+      {!registering && <p className="account-switch"><button className="account-text-link" type="button" disabled={busy}
+        onClick={() => { setUseCode(current => !current); setError('') }}>
+        {useCode ? 'Sign in with a password' : 'Sign in with an email code'}
+      </button></p>}
       <p className="account-switch">{registering ? 'Already a member?' : 'New here?'}{' '}
         <Link to={`${registering ? ROUTES.signIn : ROUTES.signUp}?returnTo=${encodeURIComponent(returnTo)}`} state={{ checkoutState }}>
           {registering ? 'Sign in' : 'Create an account'}
         </Link>
       </p>
+      {!registering && <p className="account-switch"><Link to={ROUTES.verifyEmail}>Need a verification email?</Link></p>}
+      </>}
     </div>
   </section>
 }

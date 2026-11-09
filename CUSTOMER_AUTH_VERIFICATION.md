@@ -1,10 +1,12 @@
 # Customer authentication verification — 2026-11-05
 
+Historical verification before email verification was added. Registration now requires email confirmation; see [EMAIL_VERIFICATION.md](EMAIL_VERIFICATION.md) for the current flow and deployment setup.
+
 Verified against the configured Neon database using temporary accounts, bags, catalog entries, and orders. No schema migration is required. Collections were removed from application code and endpoints; existing database tables and migration history were preserved.
 
 ## API regression checks
 
-Run the development API, then `python3 scripts/verify_customer_auth.py`. The script requires the same Neon access and `psql` setup as the admin suite, and cleans up its generated fixtures in `finally`.
+Historical results from the one-off customer verification suite, which has since been removed.
 
 - Registration validates email, required names, an eight-character minimum password, and the BCrypt 72-byte limit; phone is optional.
 - Email normalization and duplicate-email conflicts.
@@ -17,7 +19,7 @@ Run the development API, then `python3 scripts/verify_customer_auth.py`. The scr
 - Logout revokes the cookie session and account access.
 - Collection endpoint returns 404.
 
-`python3 scripts/verify_admin.py` also passed again against the updated API, covering the remaining admin catalog, image/model uploads, inventory, orders, shipping, dashboard, and customer queries.
+The admin verification suite also passed again against the updated API, covering the remaining admin catalog, image/model uploads, inventory, orders, shipping, dashboard, and customer queries.
 
 ## Chromium checks
 

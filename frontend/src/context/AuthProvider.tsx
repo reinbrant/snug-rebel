@@ -52,7 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return <AuthContext.Provider value={{ ...state, refresh,
         signIn: (email, password) => authenticate(() => auth.signIn(email, password)),
-        signUp: form => authenticate(() => auth.signUp(form)),
+        signInWithCode: (email, code) => authenticate(() => auth.signInWithCode(email, code)),
+        signUp: form => auth.signUp(form),
         signOut: async () => {
             version.current++
             await auth.signOut()

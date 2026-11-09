@@ -1,1 +1,5 @@
 .vs/
+
+# Keep local environment files and secrets out of Git.
+.env
+.env.*

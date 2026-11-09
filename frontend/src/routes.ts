@@ -6,6 +6,7 @@ export const ROUTES = {
   checkout: '/checkout',
   signIn: '/sign-in',
   signUp: '/sign-up',
+  verifyEmail: '/verify-email',
   account: '/account'
 } as const
 

@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
@@ -33,7 +34,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         var id = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
         var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
         var user = id == null ? null : await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.PkUserId == id);
-        if (user == null || !user.IsActive)
+        if (user == null || !user.IsActive || (user.EmailVerificationRequired && user.EmailVerifiedAt == null))
         {
             context.RejectPrincipal();
             await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -51,6 +52,32 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<CustomerCartService>();
+builder.Services.AddScoped<EmailVerificationService>();
+builder.Services.AddScoped<EmailOtpService>();
+builder.Services.AddHttpClient<VerificationEmailSender>(client =>
+{
+    // A local provider stub can be used in Development without sending email.
+    const string endpoint = "https://api.brevo.com/";
+    var providerUrl = builder.Environment.IsDevelopment()
+        ? builder.Configuration["Email:DevelopmentApiUrl"] ?? endpoint : endpoint;
+    client.BaseAddress = new Uri(providerUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    foreach (var (name, limit) in new[] { ("verification-send", 20), ("verification-confirm", 30) })
+        options.AddPolicy(name, context => RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
+            }));
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        await context.HttpContext.Response.WriteAsJsonAsync(new { message = "Too many requests. Please wait a minute and try again." }, cancellationToken);
+    };
+});
 
 // Lets the React dev server (Vite) call the API. Override in appsettings per environment.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -89,6 +116,7 @@ else
 
 // Model previews fetch uploaded GLB files from the admin origin.
 app.UseCors();
+app.UseRateLimiter();
 app.UseStaticFiles(new StaticFileOptions
 {
     ContentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider

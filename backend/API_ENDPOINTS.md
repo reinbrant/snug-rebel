@@ -21,7 +21,7 @@ Controller: `AuthController`
 Route base: `/api/Auth`
 
 ### `POST /api/Auth/register`
-Creates a customer account, signs it in with an HttpOnly session cookie, and returns the safe account profile. Passwords must contain at least 8 characters and at most 72 UTF-8 bytes. `phoneNumber` is optional. Both registration and login accept an optional `sessionToken` to transfer or merge a guest bag into the account. The guest token is cleared from the transferred cart.
+Creates a pending customer account, sends a verification email, and returns HTTP 202 without signing in. New accounts must verify their email before login. Existing accounts retain access. Passwords must contain at least 8 characters and at most 72 UTF-8 bytes. `phoneNumber` is optional. Login accepts an optional `sessionToken` to transfer or merge a guest bag into the account after verification. The guest token is cleared from the transferred cart.
 
 Request body:
 
@@ -35,17 +35,13 @@ Request body:
 }
 ```
 
-Response:
+Response (HTTP 202):
 
 ```json
 {
-  "pkUserId": "usr_...",
-  "userEmail": "hello@example.com",
-  "firstName": "Jane",
-  "lastName": "Doe",
-  "phoneNumber": "+639171234567",
-  "role": "Customer",
-  "isActive": true
+  "verificationRequired": true,
+  "email": "hello@example.com",
+  "message": "Check your email to verify your account before signing in."
 }
 ```
 
@@ -56,7 +52,7 @@ Notes:
 - `PasswordHash` is intentionally not returned to the frontend.
 
 ### `POST /api/Auth/login`
-Authenticates a user, sets an HttpOnly session cookie, and returns the safe account profile. Send `credentials: 'include'` from browser clients for all account requests.
+Authenticates a user, sets an HttpOnly session cookie, and returns the safe account profile. Send `credentials: 'include'` from browser clients for all account requests. Correct credentials for an account awaiting verification return 403 with `error: "EmailNotVerified"`. Safe profile responses also include `emailVerified`.
 
 Request body:
 
@@ -77,11 +73,29 @@ Response:
   "lastName": "Doe",
   "phoneNumber": "+639171234567",
   "role": "Customer",
-  "isActive": true
+  "isActive": true,
+  "emailVerified": true
 }
 ```
 
 ---
+
+### `POST /api/Auth/resend-verification`
+Accepts `{ "email": "hello@example.com" }` and returns a generic HTTP 202 response. Pending accounts receive a replacement code and link, at most once every 60 seconds. See [email verification setup](../EMAIL_VERIFICATION.md) for delivery configuration and limits.
+
+### `POST /api/Auth/verify-email-code`
+Accepts `{ "email": "hello@example.com", "code": "012345" }`. Verifies an active pending customer and returns 200 without a session. Invalid, expired, consumed, or locked codes return 400 / `InvalidCode`.
+
+### `POST /api/Auth/request-login-code`
+Accepts `{ "email": "hello@example.com" }`. Returns a generic 202; only active customer accounts receive a code. No account is created. Unknown/inactive/admin/staff addresses, cooldowns, and provider failures have the same response. Missing provider configuration returns 503.
+
+### `POST /api/Auth/login-code`
+Accepts `{ "email": "hello@example.com", "code": "012345", "sessionToken": "optional-guest-token" }`. Consumes a sign-in code, verifies the email if needed, merges the guest bag, and sets the same session cookie/profile as password login. Invalid codes return 400 / `InvalidCode`. Admin/staff accounts cannot use this endpoint.
+
+Codes expire in 10 minutes, permit five attempts, and are single-use. Codes for verification and sign-in have separate purposes. Sends have a 60-second account/purpose cooldown. Send endpoints share 20 requests/minute/IP; confirmations share 30. See [setup and security behavior](../EMAIL_VERIFICATION.md).
+
+### `POST /api/Auth/verify-email`
+Accepts `{ "token": "..." }` and consumes a valid single-use token. Returns 200 after verification, or 400 for invalid, expired, replaced, or used tokens. The customer must then sign in normally. Links expire after one hour.
 
 ### `GET /api/Auth/session`
 Returns the current active account profile, or 401 when signed out or inactive. Roles and account status are checked against the database on authenticated requests.
@@ -91,7 +105,7 @@ Expires the session cookie; returns 204. A failed logout must leave the frontend
 
 ### Customer ownership
 
-`GET /api/Order/mine` requires a session and returns only that account's orders. Account cart reads/writes and checkout require the matching authenticated user ID; other accounts cannot access them. Guest carts remain supported. Guest cart item updates, removal, and clearing require `X-Cart-Session` with the owning guest token. Collection endpoints have been removed; the legacy database tables are retained.
+`GET /api/Order/mine` requires a session and returns only that account's orders. Account cart reads/writes and checkout require the matching authenticated user ID; other accounts cannot access them. Guest carts remain supported. Guest cart item updates, removal, and clearing require `X-Cart-Session` with the owning guest token. Collection endpoints have been removed; `SQL/remove_collections.sql` removes the legacy database tables when run manually.
 
 ---
 

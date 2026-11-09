@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { AuthUser, Registration } from '../api/auth'
+import type { AuthUser, Registration, RegistrationResult } from '../api/auth'
 
 export type AuthState =
     | { status: 'loading' | 'anonymous' | 'error'; user: null; error: string | null }
@@ -7,7 +7,8 @@ export type AuthState =
 
 export type AuthContextValue = AuthState & {
     signIn: (email: string, password: string) => Promise<void>
-    signUp: (form: Registration) => Promise<void>
+    signInWithCode: (email: string, code: string) => Promise<void>
+    signUp: (form: Registration) => Promise<RegistrationResult>
     signOut: () => Promise<void>
     refresh: () => Promise<void>
 }
