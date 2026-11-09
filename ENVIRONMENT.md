@@ -31,6 +31,8 @@ Cloudinary is optional only if `wwwroot/uploads` has persistent storage; without
 
 ## Vercel — storefront project (`frontend`)
 
+Set the Vercel project's Root Directory to `frontend`. Its `vercel.json` supplies the SPA rewrite needed to open or refresh `/verify-email` and other application routes directly. Redeploy the storefront after changing frontend code or this configuration.
+
 | Variable | Value |
 | --- | --- |
 | `VITE_API_URL` | `https://your-api.onrender.com/api` |

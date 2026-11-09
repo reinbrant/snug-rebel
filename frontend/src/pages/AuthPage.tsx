@@ -8,23 +8,11 @@ import {
 } from "react-router";
 import { authErrorMessage } from "../api/auth";
 import { ApiError } from '../api/api'
-import VerificationEmailForm from '../components/VerificationEmailForm'
 import EmailCodeSignIn from '../components/EmailCodeSignIn'
+import { safeReturnTo } from '../helpers/authNavigation'
 import { useAuth } from "../context/authContext";
 import { ROUTES } from "../routes";
-import snugrebel_logo_black from "../assets/snugrebel_logo_black.svg";
-import sign_up_img from "../assets/sign_up_img.jpg";
-
-function safeReturnTo(value: string | null): string {
-	if (!value?.startsWith("/") || value.startsWith("//"))
-		return ROUTES.account;
-	const url = new URL(value, window.location.origin);
-	return url.origin === window.location.origin &&
-		url.pathname !== ROUTES.signIn &&
-		url.pathname !== ROUTES.signUp
-		? `${url.pathname}${url.search}${url.hash}`
-		: ROUTES.account;
-}
+import '../styles/Account.css'
 
 export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const auth = useAuth()
@@ -38,8 +26,12 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [verificationEmail, setVerificationEmail] = useState<string | null>(null)
   const [useCode, setUseCode] = useState(false)
+  const verificationPath = `${ROUTES.verifyEmail}?returnTo=${encodeURIComponent(returnTo)}`
+
+  function openVerification(email: string) {
+    navigate(verificationPath, { state: { email, checkoutState } })
+  }
 
   if (auth.status === 'loading') return <div className="account-page" role="status">Checking your session…</div>
   if (auth.user) return <Navigate to={returnTo} replace state={checkoutState} />
@@ -52,14 +44,13 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     try {
       if (registering) {
         const result = await auth.signUp(form)
-        setVerificationEmail(result.email)
-        setForm(current => ({ ...current, password: '', confirmPassword: '' }))
+        openVerification(result.email)
       } else {
         await auth.signIn(form.email, form.password)
         navigate(returnTo, { replace: true, state: checkoutState })
       }
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'EmailNotVerified') setVerificationEmail(form.email.trim())
+      if (error instanceof ApiError && error.code === 'EmailNotVerified') openVerification(form.email.trim())
       else setError(authErrorMessage(error))
     }
     finally { setBusy(false) }
@@ -84,13 +75,6 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
       <Link to={ROUTES.shop} className="account-text-link">Explore the shop →</Link>
     </div>
     <div className="account-card">
-      {verificationEmail ? <>
-        <h2>Check your email</h2>
-        <p>Verify <strong>{verificationEmail}</strong> using the code or link in your inbox, then sign in.</p>
-        <p>Check your spam folder too. Please allow a minute between email requests.</p>
-        <VerificationEmailForm initialEmail={verificationEmail} />
-        <p className="account-switch"><Link to={`${ROUTES.signIn}?returnTo=${encodeURIComponent(returnTo)}`} state={{ checkoutState }} onClick={() => setVerificationEmail(null)}>Back to sign in</Link></p>
-      </> : <>
       <h2>{registering ? 'Create an account' : 'Sign in'}</h2>
       <p>{registering ? 'Make yourself at home.' : 'Your next favorite is waiting.'}</p>
       {!registering && useCode ? <EmailCodeSignIn onSignedIn={() => navigate(returnTo, { replace: true, state: checkoutState })} /> : <form onSubmit={submit}>
@@ -118,8 +102,7 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           {registering ? 'Sign in' : 'Create an account'}
         </Link>
       </p>
-      {!registering && <p className="account-switch"><Link to={ROUTES.verifyEmail}>Need a verification email?</Link></p>}
-      </>}
+      <p className="account-switch"><Link to={verificationPath} state={{ email: form.email.trim(), checkoutState }}>Already received a code? Enter verification code</Link></p>
     </div>
   </section>
 }

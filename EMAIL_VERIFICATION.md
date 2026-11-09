@@ -35,6 +35,7 @@ Brevo is used automatically; no provider selector is needed. The API key is back
 
 ## Behavior
 
+- Signup and unverified password sign-in open `/verify-email` with the email prefilled. Customers can also select **Already received a code? Enter verification code** on the sign-in page, or visit `/verify-email` directly. Successful verification shows **Continue to sign in** and preserves the original checkout destination.
 - `POST /api/Auth/register` returns 202 with `{ "verificationRequired": true, "email": "...", "message": "..." }`, without setting a session cookie or transferring the guest bag.
 - `POST /api/Auth/login` returns 403 / `EmailNotVerified` for correct credentials belonging to an account awaiting verification. Incorrect credentials still return 401.
 - `POST /api/Auth/resend-verification`, with `{ "email": "..." }`, returns a generic 202 response for unknown, inactive, already verified, and pending accounts. Sends have a 60-second per-account cooldown. A successful resend invalidates the previous link and verification code; a delivery failure preserves both.
