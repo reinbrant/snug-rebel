@@ -1,6 +1,6 @@
 import { createElement, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Box, Image as ImageIcon } from "lucide-react";
+import { Box, Image as ImageIcon, ArrowLeft } from "lucide-react";
 import type { ItemDetail as Item, Review } from "../api/items";
 import { useCart } from "../context/cartContext";
 import AngledButton from "../components/ui/AngledButton";
@@ -9,6 +9,7 @@ import QuantityStepper from "../components/item/QuantityStepper";
 import ReviewsSection from "../components/item/ReviewsSection";
 import SizeSelector from "../components/item/SizeSelector";
 import StarRating from "../components/ui/StarRating";
+import LogoLoader from "../components/ui/LogoLoader"; // <-- Imported here
 import { formatPrice } from "../helpers/priceFormat";
 import { useItemDetail } from "../hooks/useItemDetail";
 import { ROUTES } from "../routes";
@@ -31,11 +32,8 @@ export default function ItemDetail() {
 
 	if (state.status === "loading") {
 		return (
-			<div
-				role="status"
-				className="grid min-h-[calc(100svh-var(--nav-h))] place-items-center font-display text-xl font-extrabold [font-stretch:125%]"
-			>
-				Loading…
+			<div className="flex min-h-[calc(100svh-var(--nav-h))] items-center justify-center">
+				<LogoLoader />
 			</div>
 		);
 	}
@@ -55,7 +53,6 @@ export default function ItemDetail() {
 		);
 	}
 
-	// key resets the picked color / size / quantity / viewMode when you move to a different item
 	return (
 		<ItemDetailView
 			key={state.item.id}
@@ -78,15 +75,14 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 	const navigate = useNavigate();
 
 	const selectedVariant = item.variants?.find(
-		(v) =>
-			(!item.sizes.length || v.size === size)
+		(v) => !item.sizes.length || v.size === size,
 	);
 	const price = selectedVariant?.priceOverride ?? item.price;
 	const stock =
 		selectedVariant?.stock ?? (item.variants?.length ? 0 : item.stock);
 	const isOnSale = item.salePrice != null && item.salePrice < price;
 	const outOfStock = stock <= 0;
-	const missingOptions = (item.sizes.length > 0 && !size);
+	const missingOptions = item.sizes.length > 0 && !size;
 
 	const { addItem, openCart, busy } = useCart();
 
@@ -125,12 +121,22 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 
 	return (
 		<div className="bg-white">
-			<section className="flex min-h-[calc(100svh-var(--nav-h))] items-center px-6 py-8 md:px-14">
+			{/* Back Link Nav */}
+			<div className="px-6 md:px-14 pt-6 bg-white flex items-center">
+				<button
+					onClick={() => navigate(-1)}
+					className="inline-flex items-center gap-1.5 font-display font-extrabold uppercase text-xs tracking-widest text-neutral-500 hover:text-black transition-colors"
+				>
+					<ArrowLeft size={14} /> Back to shop
+				</button>
+			</div>
+
+			<section className="flex min-h-[calc(100svh-var(--nav-h)-3rem)] bg-white items-center px-6 py-6 md:px-14">
 				<div className="grid w-full gap-8 lg:grid-cols-[auto_1fr] lg:gap-14">
+					{/* ... (2D/3D Viewer remains exactly the same here) ... */}
+
 					<div className="mx-auto w-full max-w-md lg:mx-0 lg:w-[min(45vw,calc((100svh_-_var(--nav-h)_-_4rem)*0.7238))] lg:max-w-none">
-						{/* Media Frame (Strict Aspect Ratio) */}
 						<div className="relative aspect-[710/981] w-full overflow-hidden border-4 border-brand-red-dark bg-neutral-300">
-							{/* Content Container */}
 							{viewMode === "2d" ? (
 								<img
 									src={imgSrc}
@@ -174,7 +180,6 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 								</div>
 							)}
 
-							{/* 2D / 3D Toggle Capsule (Absolute Bottom Right) */}
 							<div
 								role="group"
 								aria-label="Toggle 2D or 3D product view"
@@ -191,7 +196,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 											: "bg-transparent text-black hover:bg-neutral-300",
 									].join(" ")}
 								>
-									<ImageIcon size={14} aria-hidden="true" />
+									<ImageIcon size={14} aria-hidden="true" />{" "}
 									2D
 								</button>
 								<button
@@ -205,14 +210,12 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 											: "bg-transparent text-black hover:bg-neutral-300",
 									].join(" ")}
 								>
-									<Box size={14} aria-hidden="true" />
-									3D
+									<Box size={14} aria-hidden="true" /> 3D
 								</button>
 							</div>
 						</div>
 					</div>
 
-					{/* Product Info Section (Unchanged) */}
 					<div className="flex min-w-0 flex-col justify-center gap-5">
 						<div>
 							<h1 className="font-display text-[clamp(2rem,3.6vw,4.25rem)] font-black leading-[1.1] tracking-tight [font-stretch:125%]">
@@ -275,6 +278,7 @@ function ItemDetailView({ item, reviews }: { item: Item; reviews: Review[] }) {
 									value={size}
 									onChange={setSize}
 									labelledBy="item-size-label"
+									variants={item.variants}
 								/>
 							</div>
 						)}
