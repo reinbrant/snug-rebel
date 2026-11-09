@@ -32,7 +32,7 @@ export default function ItemDetail() {
 
 	if (state.status === "loading") {
 		return (
-			<div className="flex min-h-[calc(100svh-var(--nav-h))] items-center justify-center">
+			<div className="flex min-h-[calc(100svh-var(--nav-h))] items-center justify-center bg-white">
 				<LogoLoader />
 			</div>
 		);
