@@ -24,7 +24,7 @@ namespace backend.Controllers
         public async Task<IActionResult> GetOrders()
         {
             var orders = await _context.Orders.AsNoTracking().AsSplitQuery()
-                .Include(o => o.OrderItems).Include(o => o.Shipments)
+                .Include(o => o.OrderItems).ThenInclude(oi => oi.FkProductVariant).Include(o => o.Shipments)
                 .OrderByDescending(o => o.PlacedAt).ToListAsync();
             return Ok(orders.Select(MapToOrderDto));
         }
@@ -123,6 +123,7 @@ namespace backend.Controllers
                 if (!CanAccessUser(userId)) return User.Identity?.IsAuthenticated == true ? Forbid() : Unauthorized();
                 var orders = await _context.Orders
                     .Include(o => o.OrderItems)
+                        .ThenInclude(oi => oi.FkProductVariant)
                     .Where(o => o.FkUserId == userId)
                     .OrderByDescending(o => o.PlacedAt)
                     .ToListAsync();
@@ -148,6 +149,7 @@ namespace backend.Controllers
 
                 var order = await _context.Orders
                     .Include(o => o.OrderItems)
+                        .ThenInclude(oi => oi.FkProductVariant)
                     .FirstOrDefaultAsync(o => o.PkOrderId == orderId);
 
                 if (order == null)
@@ -577,6 +579,7 @@ namespace backend.Controllers
                 Items = order.OrderItems.Select(oi => new OrderItemDTO
                 {
                     PkOrderItemId = oi.PkOrderItemId,
+                    ProductId = oi.FkProductVariant?.FkProductId ?? string.Empty,
                     FkOrderId = oi.FkOrderId,
                     FkProductVariantId = oi.FkProductVariantId,
                     ProductName = oi.ProductName,

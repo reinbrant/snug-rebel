@@ -25,7 +25,8 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
         new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.PkUserId),
-            new Claim(ClaimTypes.Role, user.Role.ToString())
+            new Claim(ClaimTypes.Role, user.Role.ToString()),
+            new Claim(PasswordSession.ClaimType, PasswordSession.Version(user.PasswordHash))
         }, CookieAuthenticationDefaults.AuthenticationScheme)));
 
     [HttpPost("logout")]
@@ -166,6 +167,52 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
         await transaction.CommitAsync(cancellationToken);
         await SignIn(user);
         return Ok(Profile(user));
+    }
+
+    [HttpPost("forgot-password")]
+    [EnableRateLimiting("verification-send")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ResendVerificationRequest request, CancellationToken cancellationToken)
+    {
+        if (!sender.IsConfigured)
+            return StatusCode(503, new { message = "Password recovery is temporarily unavailable. Please try again later." });
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await context.Users.SingleOrDefaultAsync(u => u.UserEmail.ToLower() == email
+            && u.IsActive && u.Role == UserRole.Customer, cancellationToken);
+        if (user != null)
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var code = await otp.Issue(user, EmailOtpService.PasswordReset, cancellationToken);
+                if (code != null) await sender.SendPasswordReset(user.UserEmail, code, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (EmailDeliveryException) { /* Rollback preserves the previous delivered code. */ }
+        }
+        return Accepted(new { message = "If this email belongs to an active customer account, a password reset code will be sent. Check your spam folder too. Please allow a minute between requests." });
+    }
+
+    [HttpPost("reset-password")]
+    [EnableRateLimiting("verification-confirm")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        var user = await otp.Consume(request.Email.Trim().ToLowerInvariant(), request.Code, EmailOtpService.PasswordReset, cancellationToken);
+        if (user == null)
+        {
+            await transaction.CommitAsync(cancellationToken); // Persist failed-attempt counts.
+            return InvalidCode();
+        }
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        user.UpdatedAt = DateTime.UtcNow;
+        // Invalidate outstanding sign-in codes as well as the consumed reset code.
+        await context.EmailOtps.Where(o => o.UserId == user.PkUserId && o.Purpose == EmailOtpService.SignIn)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(o => o.Attempts, 5), cancellationToken);
+        context.AuditLogs.Add(new AuditLog { FkUserId = user.PkUserId, Action = "PASSWORD_RESET", CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Ok(new { message = "Password updated. Sign in with your new password." });
     }
 
     private BadRequestObjectResult InvalidCode() => BadRequest(new { error = "InvalidCode",

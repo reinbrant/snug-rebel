@@ -3,6 +3,9 @@ using backend.DTO;
 using backend.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
+using Npgsql;
 
 namespace backend.Controllers;
 
@@ -75,6 +78,7 @@ public class ReviewController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<IActionResult> CreateReview([FromBody] CreateReviewRequest request)
     {
         try
@@ -85,8 +89,8 @@ public class ReviewController : ControllerBase
             if (string.IsNullOrWhiteSpace(request.ProductId))
                 return BadRequest(new { error = "InvalidProductId", message = "ProductId is required." });
 
-            if (string.IsNullOrWhiteSpace(request.UserId))
-                return BadRequest(new { error = "InvalidUserId", message = "UserId is required." });
+            // Ownership follows the authenticated session, never a client-supplied user ID.
+            request.UserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
             if (string.IsNullOrWhiteSpace(request.OrderItemId))
                 return BadRequest(new { error = "InvalidOrderItemId", message = "OrderItemId is required." });
@@ -112,6 +116,12 @@ public class ReviewController : ControllerBase
 
             if (orderItem.FkOrder.FkUserId != request.UserId)
                 return BadRequest(new { error = "InvalidOrderItemOwner", message = "The specified order item does not belong to this user." });
+
+            if (orderItem.FkOrder.Status != OrderStatus.Delivered)
+                return BadRequest(new { error = "OrderNotDelivered", message = "You can review an item after it has been delivered." });
+
+            if (await _context.Reviews.AnyAsync(r => r.FkUserId == request.UserId && r.FkOrderItemId == request.OrderItemId))
+                return Conflict(new { error = "AlreadyReviewed", message = "You have already reviewed this item." });
 
             if (orderItem.FkProductVariant?.FkProductId != request.ProductId)
                 return BadRequest(new { error = "InvalidOrderItemProduct", message = "The specified order item does not belong to this product." });
@@ -148,7 +158,9 @@ public class ReviewController : ControllerBase
             catch (Exception dbEx)
             {
                 await transaction.RollbackAsync();
-                throw dbEx;
+                if (dbEx is DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } })
+                    return Conflict(new { error = "AlreadyReviewed", message = "You have already reviewed this item." });
+                throw;
             }
         }
         catch (Exception ex)

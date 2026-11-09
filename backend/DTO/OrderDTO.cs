@@ -67,6 +67,7 @@ namespace backend.DTO
 
     public class OrderItemDTO
     {
+        public string ProductId { get; set; } = string.Empty;
         public string PkOrderItemId { get; set; } = null!;
         public string FkOrderId { get; set; } = null!;
         public string FkProductVariantId { get; set; } = null!;

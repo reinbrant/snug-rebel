@@ -10,6 +10,7 @@ public class EmailOtpService(AppDbContext context)
 {
     public const string Verification = "verification";
     public const string SignIn = "sign-in";
+    public const string PasswordReset = "password-reset";
 
     // All operations run inside the caller's transaction, including email delivery.
     public async Task<string?> Issue(User user, string purpose, CancellationToken cancellationToken)
@@ -36,6 +37,12 @@ public class EmailOtpService(AppDbContext context)
     // and single use across concurrent requests and backend instances.
     public async Task<User?> Consume(string email, string code, string purpose, CancellationToken cancellationToken)
     {
+        // Lock the account before its challenges in every consume flow. Password
+        // reset can invalidate sign-in codes without inverting the lock order.
+        var user = await context.Users.FromSqlInterpolated($"""
+            SELECT * FROM users WHERE lower(user_email) = {email} FOR UPDATE
+            """).SingleOrDefaultAsync(cancellationToken);
+        if (user == null || !user.IsActive || user.Role != UserRole.Customer) return null;
         var challenge = await context.EmailOtps.FromSqlInterpolated($"""
             SELECT * FROM email_otps WHERE email = {email} AND purpose = {purpose} FOR UPDATE
             """).SingleOrDefaultAsync(cancellationToken);
@@ -46,18 +53,17 @@ public class EmailOtpService(AppDbContext context)
             await context.SaveChangesAsync(cancellationToken);
             return null;
         }
-        // Serialize account updates with link verification and role/status changes.
-        var user = await context.Users.FromSqlInterpolated($"""
-            SELECT * FROM users WHERE _pk_user_id = {challenge.UserId} FOR UPDATE
-            """).SingleOrDefaultAsync(cancellationToken);
-        if (user == null || user.UserEmail.ToLowerInvariant() != email || !user.IsActive || user.Role != UserRole.Customer
+        if (user.PkUserId != challenge.UserId || user.UserEmail.ToLowerInvariant() != email
             || (purpose == Verification && (!user.EmailVerificationRequired || user.EmailVerifiedAt != null)))
         {
             await context.SaveChangesAsync(cancellationToken);
             return null;
         }
-        user.EmailVerifiedAt ??= DateTime.UtcNow;
-        user.EmailVerificationRequired = false;
+        if (purpose != PasswordReset)
+        {
+            user.EmailVerifiedAt ??= DateTime.UtcNow;
+            user.EmailVerificationRequired = false;
+        }
         user.UpdatedAt = DateTime.UtcNow;
         // Keep the consumed row until the next send so the resend cooldown survives consumption.
         challenge.Attempts = 5;

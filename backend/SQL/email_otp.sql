@@ -2,7 +2,7 @@
 BEGIN;
 CREATE TABLE IF NOT EXISTS public.email_otps (
     _fk_user_id varchar(60) NOT NULL REFERENCES public.users (_pk_user_id) ON DELETE CASCADE,
-    purpose varchar(20) NOT NULL CHECK (purpose IN ('verification', 'sign-in')),
+    purpose varchar(20) NOT NULL CHECK (purpose IN ('verification', 'sign-in', 'password-reset')),
     email varchar(255) NOT NULL,
     code_hash varchar(60) NOT NULL,
     expires_at timestamp without time zone NOT NULL,
