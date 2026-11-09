@@ -657,3 +657,31 @@ General frontend guidance for the team:
 ```
 
 - The application is configured to allow CORS from the frontend origin, typically `http://localhost:5173` in development.
+# Dashboard insights
+
+`GET /api/Dashboard/insights?days=90` requires an Admin or Staff session.
+The reporting period accepts `30`, `90` (default), or `365`; other values return HTTP 400.
+
+Returns merchandise sales, order counts, average order value, repeat customer counts,
+shipping region aggregates, 24 completed calendar months with prior-year sales,
+a next-30-day forecast, and evidence-based recommended actions. No customer identifiers
+are returned. Calculations use completed Philippine calendar days (UTC+8).
+
+Qualifying orders are non-test Paid or Delivered orders, or Processing/Shipped orders
+with a Paid payment. Pending, Cancelled and Refunded orders are excluded. Sales are
+`max(0, TotalAmount - ShippingFee)`. Dates use order placement time; this is an operational
+sales view, not a payment settlement report. Repeat customers have multiple qualifying
+orders within the selected period and are matched by normalized email, falling back to
+account ID. The legacy `guest@snugrebel.local` placeholder is treated as unidentified.
+Age and gender are not collected and cannot be analyzed.
+
+The forecast averages each weekday over up to eight completed weeks, including zero-sale
+days. It requires at least 28 observed days and 10 qualifying orders in that window.
+Its range scales the estimate by weekly sales variability, with a minimum of ±20% and
+a maximum of ±100%; this is a planning scenario, not a statistical confidence interval.
+No annual seasonal adjustment is applied. Monthly comparisons help identify potential
+seasonality; recurring seasonal patterns require more history. The first observed month
+may have partial coverage. Growth comparisons are withheld until both selected periods
+have history. Test with `dotnet run --project tests/Analytics.Tests`.
+
+No new environment variables, paid providers, scheduled jobs, or database migrations are required.

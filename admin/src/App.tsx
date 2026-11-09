@@ -24,6 +24,7 @@ import './App.css'
 import { loginWithEmailPassword } from './lib/auth'
 import { API_BASE, apiFetch, requestJson, readErrorMessage, resolveAssetUrl } from './lib/config'
 import { ProductImagesEditor } from './components/ProductImagesEditor'
+import { PredictiveAnalytics } from './components/PredictiveAnalytics'
 import { Model3DList } from './components/Model3DList'
 import { Model3DUpload } from './components/Model3DUpload'
 import { uploadProductModel, type StagedModel } from './lib/models3d'
@@ -346,7 +347,7 @@ function DashboardPage() {
     <div className="page-stack">
       {error && <p className="error-banner" role="alert">{error}</p>}
       <section className="page-header dashboard-header">
-        <div><p className="eyebrow">Overview</p><h2>Tracking Orders List</h2></div>
+        <div><p className="eyebrow">Overview</p><h2>Store dashboard</h2></div>
         <button type="button" className="primary-button small-button" onClick={() => downloadCsv('snug-rebel-analytics.csv', [
           ['Date', 'Orders', 'Total'], ...analytics.days.map(day => [day.date, day.orders, day.total]),
         ])}><Download size={16} /> Export data</button>
@@ -368,6 +369,8 @@ function DashboardPage() {
           </div>
         </div>
       </section>
+
+      <PredictiveAnalytics />
 
       <section className="analytics-grid single-analytic">
         <article className="panel-card analytic-panel">

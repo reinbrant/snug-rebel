@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using backend.Data;
 using backend.Models;
+using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,6 +22,34 @@ public class DashboardController : ControllerBase
     public DashboardController(AppDbContext context)
     {
         _context = context;
+    }
+
+    [HttpGet("insights")]
+    public async Task<IActionResult> GetInsights([FromQuery] int days = 90, CancellationToken cancellationToken = default)
+    {
+        if (days is not (30 or 90 or 365))
+            return BadRequest(new { message = "Choose a 30, 90 or 365 day reporting period." });
+        var now = DateTime.UtcNow;
+        var localToday = now.AddHours(8).Date;
+        var start = DateTime.SpecifyKind(new DateTime(localToday.Year, localToday.Month, 1).AddMonths(-24).AddHours(-8), DateTimeKind.Utc);
+        var end = DateTime.SpecifyKind(localToday.AddHours(-8), DateTimeKind.Utc);
+        // Delivered includes cash-on-delivery sales. Pending and unpaid processing orders are excluded.
+        var data = await _context.Orders.AsNoTracking()
+            .Where(o => !o.IsTest && o.PlacedAt >= start && o.PlacedAt < end &&
+                (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Delivered ||
+                    ((o.Status == OrderStatus.Processing || o.Status == OrderStatus.Shipped) && o.Payments.Any(p => p.Status == PaymentStatus.Paid))))
+            .Select(o => new {
+                o.PlacedAt,
+                Sales = Math.Max(0, o.TotalAmount - o.ShippingFee),
+                Email = o.ContactEmail ?? (o.FkUser != null ? o.FkUser.UserEmail : null),
+                o.FkUserId,
+                Province = o.FkShippingAddress.Province,
+                Country = o.FkShippingAddress.Country
+            }).ToListAsync(cancellationToken);
+        var orders = data.Select(o => new InsightOrder(o.PlacedAt, o.Sales,
+            SalesInsights.CustomerKey(o.Email, o.FkUserId),
+            (o.Province ?? "").Trim().ToUpperInvariant(), (o.Country ?? "").Trim().ToUpperInvariant())).ToList();
+        return Ok(SalesInsights.Calculate(orders, now, days));
     }
 
     [HttpGet("analytics")]
