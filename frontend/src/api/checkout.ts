@@ -5,6 +5,7 @@ import {
     type AppliedVoucher,
     type CheckoutFormValues,
     type ConfirmedOrder,
+    type PaymentOptionId,
 } from "./checkout.types";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "true";
@@ -28,13 +29,25 @@ interface BackendOrderDTO {
     placedAt: string;
 }
 
+function mapBackendPaymentMethod(method: PaymentOptionId): string {
+    switch (method) {
+        case "cod":
+            return "Cod";
+        case "cod_ewallet":
+            return "CodEwallet";
+        case "gcash":
+            return "Gcash";
+        case "card":
+            return "Card";
+    }
+}
+
 export async function validateVoucherCode(
     rawCode: string,
     subtotal: number,
 ): Promise<AppliedVoucher> {
     const code = rawCode.trim().toUpperCase();
     if (!code) throw new Error("Enter a voucher code.");
-
     if (!USE_MOCK) {
         try {
             const promos = await apiFetch<BackendPromoCode[]>("/PromoCode");
@@ -59,14 +72,12 @@ export async function validateVoucherCode(
             }
         }
     }
-
     if (code === "REBEL200") {
         return { code: "REBEL200", discountAmount: 200 };
     }
     if (code === "SNUG100") {
         return { code: "SNUG100", discountAmount: 100 };
     }
-
     throw new Error(`Voucher "${code}" is invalid or expired.`);
 }
 
@@ -86,10 +97,20 @@ export async function submitCheckoutOrder(params: {
     subtotal: number;
     shippingDiscount: number;
     voucher: AppliedVoucher | null;
-    values: CheckoutFormValues;
+    values: CheckoutFormValues & { customerNote?: string };
+    providerReference?: string;
 }): Promise<ConfirmedOrder> {
-    const { owner, isBuyNow, items, subtotal, shippingDiscount, voucher, values } =
-        params;
+    const {
+        owner,
+        isBuyNow,
+        items,
+        subtotal,
+        shippingDiscount,
+        voucher,
+        values,
+        providerReference,
+    } = params;
+
     const courier =
         COURIER_OPTIONS.find((c) => c.id === values.courierId) ??
         COURIER_OPTIONS[0];
@@ -102,57 +123,74 @@ export async function submitCheckoutOrder(params: {
     let placedAt = new Date().toISOString();
 
     if (!USE_MOCK) {
-        // Generate a unique idempotency key per checkout attempt
-        const idempotencyKey = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-        
+        const idempotencyKey =
+            typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2);
         const userId = "userId" in owner ? owner.userId : undefined;
-        const sessionToken = "sessionToken" in owner ? owner.sessionToken : undefined;
+        const sessionToken =
+            "sessionToken" in owner ? owner.sessionToken : undefined;
 
-        // Removed the fake-order catch block so real errors bubble up to CheckoutPage.tsx
-        const createdOrder = await apiFetch<BackendOrderDTO>(
-            "/Order/checkout",
-            {
-                method: "POST",
-                body: JSON.stringify({
-                    userId: userId ?? null,
-                    sessionToken: sessionToken ?? null,
-                    idempotencyKey, // Send idempotencyKey
-                    shippingFee: netShipping,
-                    discountAmount,
-                    voucherCode: voucher?.code ?? null,
-                    courier: courier.name,
-                    paymentMethod:
-                        values.paymentMethod === "cod"
-                            ? "COD"
-                            : "COD_EWALLET",
-                    // Inline address and contact fields sent directly in the checkout payload
-                    recipientName: `${values.firstName.trim()} ${values.lastName.trim()}`,
-                    email: values.email.trim(),
-                    phone: values.mobileNumber.trim(),
-                    line1: values.line1.trim(),
-                    barangay: values.barangayName,
-                    city: values.cityName,
-                    province: values.provinceName,
-                    postalCode: values.postalCode.trim(),
-                    customerNote: values.landmarkNotes.trim() || null,
-                    cashReadyOption: values.cashReadyOption,
-                    directItems: isBuyNow
-                        ? items.map((i) => ({
-                            productId: i.productId,
-                            productVariantId: i.variantId,
-                            size: i.size,
-                            color: i.color,
-                            quantity: i.quantity,
-                        }))
-                        : null,
-                }),
-            },
-        );
+        const createdOrder = await apiFetch<BackendOrderDTO>("/Order/checkout", {
+            method: "POST",
+            body: JSON.stringify({
+                userId: userId ?? null,
+                sessionToken: sessionToken ?? null,
+                idempotencyKey,
+                shippingFee: netShipping,
+                discountAmount,
+                voucherCode: voucher?.code ?? null,
+                courier: courier.name,
+                paymentMethod: mapBackendPaymentMethod(values.paymentMethod),
+                recipientName: `${values.firstName.trim()} ${values.lastName.trim()}`,
+                email: values.email.trim(),
+                phone: values.mobileNumber.trim(),
+                line1: values.line1.trim(),
+                barangay: values.barangayName,
+                city: values.cityName,
+                province: values.provinceName,
+                postalCode: values.postalCode.trim(),
+                customerNote:
+                    (values.customerNote || values.landmarkNotes)?.trim() || null,
+                cashReadyOption: values.cashReadyOption,
+                directItems: isBuyNow
+                    ? items.map((i) => ({
+                        productId: i.productId,
+                        productVariantId: i.variantId,
+                        size: i.size,
+                        color: i.color,
+                        quantity: i.quantity,
+                    }))
+                    : null,
+            }),
+        });
 
         if (createdOrder?.orderNumber) {
             orderId = createdOrder.pkOrderId || orderId;
             orderNumber = createdOrder.orderNumber;
             placedAt = createdOrder.placedAt || placedAt;
+        }
+
+        // Mark online mock payments (Card / GCash QR) as Paid in the backend
+        if (
+            createdOrder?.pkOrderId &&
+            (values.paymentMethod === "card" || values.paymentMethod === "gcash")
+        ) {
+            try {
+                await apiFetch("/Payment/process", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        orderId: createdOrder.pkOrderId,
+                        // Backend PaymentMethod enum: 2 = Gcash, 4 = Card
+                        method: values.paymentMethod === "gcash" ? 2 : 4,
+                        providerReference:
+                            providerReference ??
+                            `MOCK-${values.paymentMethod.toUpperCase()}-${Date.now()}`,
+                    }),
+                });
+            } catch (err) {
+                console.warn("Mock payment status update warning:", err);
+            }
         }
     }
 

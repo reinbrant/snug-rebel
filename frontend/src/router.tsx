@@ -6,6 +6,7 @@ import ItemDetail from "./pages/ItemDetail.tsx";
 import LandingPage from "./pages/LandingPage.tsx";
 import Shop from "./pages/ShoppingPage.tsx";
 import CheckoutPage from "./pages/CheckoutPage.tsx";
+import MockQrPaymentPage from "./pages/MockQrPaymentPage.tsx";
 import PlaceholderPage from "./pages/PlaceholderPage.tsx";
 import AuthPage from './pages/AuthPage.tsx'
 import AccountPage from './pages/AccountPage.tsx'
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
 			{ path: ROUTES.shop, element: <Shop /> },
 			{ path: ITEM_ROUTE_PATTERN, element: <ItemDetail /> }, // /shop/:itemId
 			{ path: ROUTES.checkout, element: <CheckoutPage /> },
+			{ path: ROUTES.mockQrPay, element: <MockQrPaymentPage /> },
             { path: ROUTES.signIn, element: <AuthPage key="sign-in" mode="sign-in" /> },
             { path: ROUTES.signUp, element: <AuthPage key="sign-up" mode="sign-up" /> },
             { path: ROUTES.account, element: <AccountPage /> },
