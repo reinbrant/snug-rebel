@@ -39,6 +39,7 @@ import {
 import { submitCheckoutOrder, validateVoucherCode } from "../api/checkout";
 import { formatPrice } from "../helpers/priceFormat";
 import { ROUTES } from "../routes";
+import { apiFetch } from "../api/api";
 
 type ExtendedFormValues = CheckoutFormValues & { customerNote: string };
 type ValidationErrors = Partial<Record<keyof ExtendedFormValues, string>>;
@@ -209,6 +210,9 @@ function CheckoutForm() {
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [qrSessionId, setQrSessionId] = useState<string>("");
 	const [qrConfirmedRef, setQrConfirmedRef] = useState<string | null>(null);
+	const [pendingQrOrder, setPendingQrOrder] = useState<ConfirmedOrder | null>(
+		null,
+	);
 
 	const [customCashAmount, setCustomCashAmount] = useState("");
 	const [errors, setErrors] = useState<ValidationErrors>({});
@@ -543,25 +547,50 @@ function CheckoutForm() {
 		],
 	);
 
-	// Listen for QR scan confirmation from the separate MockQrPaymentPage
+	// Listen for QR scan confirmation (both cross-device Backend Polling AND same-device Tab Sync)
 	useEffect(() => {
-		if (!qrModalOpen || !qrSessionId) return;
+		if (!qrModalOpen || !qrSessionId || !pendingQrOrder) return;
 
-		const handleConfirmedSignal = (refNo: string) => {
-			if (qrConfirmedRef) return;
+		let active = true;
+
+		const completeQrOrder = async (refNo: string) => {
+			if (!active || qrConfirmedRef) return;
 			setQrConfirmedRef(refNo);
-			setTimeout(() => {
-				void finalizeOrderSubmission(refNo);
-			}, 900);
+			setTimeout(async () => {
+				if (!active) return;
+				setQrModalOpen(false);
+				setConfirmedOrder({
+					...pendingQrOrder,
+					cashReadyLabel: `Paid via GCash QR (${refNo})`,
+				});
+				if (!buyNowItems) await clear();
+				window.scrollTo({ top: 0, behavior: "smooth" });
+			}, 800);
 		};
 
+		// A. Cross-device Backend Polling (Phone -> Backend -> Desktop)
+		const pollTimer = window.setInterval(async () => {
+			try {
+				const tracked = await apiFetch<{ status?: string }>(
+					`/Order/track/${encodeURIComponent(pendingQrOrder.orderNumber)}`,
+				);
+				if (tracked?.status === "Paid") {
+					void completeQrOrder(`QR-${pendingQrOrder.orderNumber}`);
+				}
+			} catch {
+				// Ignore transient polling errors while waiting
+			}
+		}, 2000);
+
+		// B. Same-device LocalStorage / BroadcastChannel fallback
 		const onStorage = (e: StorageEvent) => {
 			if (e.key === `snug-qr-paid-${qrSessionId}` && e.newValue) {
 				try {
 					const data = JSON.parse(e.newValue);
 					if (data?.status === "PAID") {
-						handleConfirmedSignal(
-							data.referenceNumber || `QR-${Date.now()}`,
+						void completeQrOrder(
+							data.referenceNumber ||
+								`QR-${pendingQrOrder.orderNumber}`,
 						);
 					}
 				} catch {
@@ -578,8 +607,9 @@ function CheckoutForm() {
 					event.data?.sessionId === qrSessionId &&
 					event.data?.status === "PAID"
 				) {
-					handleConfirmedSignal(
-						event.data.referenceNumber || `QR-${Date.now()}`,
+					void completeQrOrder(
+						event.data.referenceNumber ||
+							`QR-${pendingQrOrder.orderNumber}`,
 					);
 				}
 			};
@@ -587,10 +617,19 @@ function CheckoutForm() {
 
 		window.addEventListener("storage", onStorage);
 		return () => {
+			active = false;
+			window.clearInterval(pollTimer);
 			window.removeEventListener("storage", onStorage);
 			bc?.close();
 		};
-	}, [qrModalOpen, qrSessionId, qrConfirmedRef, finalizeOrderSubmission]);
+	}, [
+		qrModalOpen,
+		qrSessionId,
+		pendingQrOrder,
+		qrConfirmedRef,
+		buyNowItems,
+		clear,
+	]);
 
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
@@ -627,7 +666,6 @@ function CheckoutForm() {
 				return;
 			}
 
-			// Simulate card gateway verification and authorization
 			setSubmitting(true);
 			setCardProcessingStage("VERIFYING CARD FORMAT & ISSUER...");
 			await new Promise((r) => setTimeout(r, 950));
@@ -646,11 +684,58 @@ function CheckoutForm() {
 		if (Object.keys(validation).length > 0) return;
 
 		if (values.paymentMethod === "gcash") {
-			// Open the QR Code Scanner Modal
-			const newSession = `SRQR-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-			setQrConfirmedRef(null);
-			setQrSessionId(newSession);
-			setQrModalOpen(true);
+			// If we already created the pending order for this checkout session, just re-open the modal
+			if (pendingQrOrder) {
+				setQrModalOpen(true);
+				return;
+			}
+
+			setSubmitting(true);
+			try {
+				const newSession = `SRQR-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+				const created = await submitCheckoutOrder({
+					owner,
+					isBuyNow: Boolean(buyNowItems),
+					items: checkoutItems,
+					subtotal: activeSubtotal,
+					shippingDiscount,
+					voucher,
+					values: {
+						...values,
+						cashReadyOption: "Paid via GCash QR",
+					},
+					deferOnlinePayment: true, // Creates Pending order on backend first
+				});
+
+				created.items = created.items.map((ci) => {
+					const variantId =
+						(ci as CartLine & { fkProductVariantId?: string })
+							.fkProductVariantId ?? ci.id;
+					const cartRef = checkoutItems.find(
+						(item) =>
+							item.id === variantId ||
+							(item as CartLine & { productVariantId?: string })
+								.productVariantId === variantId,
+					);
+					return {
+						...ci,
+						imageUrl: cartRef?.imageUrl ?? null,
+					} as CartLine;
+				});
+
+				setPendingQrOrder(created);
+				setQrConfirmedRef(null);
+				setQrSessionId(newSession);
+				setQrModalOpen(true);
+			} catch (err) {
+				setSubmitError(
+					err instanceof Error
+						? err.message
+						: "Failed to initialize QR payment. Please try again.",
+				);
+			} finally {
+				setSubmitting(false);
+			}
 			return;
 		}
 
@@ -661,12 +746,20 @@ function CheckoutForm() {
 		if (!qrSessionId || typeof window === "undefined") return "";
 		const params = new URLSearchParams({
 			session: qrSessionId,
+			orderId: pendingQrOrder?.orderId ?? "",
+			orderNo: pendingQrOrder?.orderNumber ?? "",
 			amount: String(finalTotal),
 			recipient:
 				`${values.firstName.trim()} ${values.lastName.trim()}`.trim(),
 		});
 		return `${window.location.origin}${ROUTES.mockQrPay}?${params.toString()}`;
-	}, [qrSessionId, finalTotal, values.firstName, values.lastName]);
+	}, [
+		qrSessionId,
+		pendingQrOrder,
+		finalTotal,
+		values.firstName,
+		values.lastName,
+	]);
 
 	if (confirmedOrder) {
 		const deliveryWindow = formatDeliveryRange(

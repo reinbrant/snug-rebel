@@ -99,6 +99,7 @@ export async function submitCheckoutOrder(params: {
     voucher: AppliedVoucher | null;
     values: CheckoutFormValues & { customerNote?: string };
     providerReference?: string;
+    deferOnlinePayment?: boolean; // <-- Added flag for QR flow
 }): Promise<ConfirmedOrder> {
     const {
         owner,
@@ -109,6 +110,7 @@ export async function submitCheckoutOrder(params: {
         voucher,
         values,
         providerReference,
+        deferOnlinePayment,
     } = params;
 
     const courier =
@@ -171,8 +173,9 @@ export async function submitCheckoutOrder(params: {
             placedAt = createdOrder.placedAt || placedAt;
         }
 
-        // Mark online mock payments (Card / GCash QR) as Paid in the backend
+        // Only auto-mark as Paid here if deferOnlinePayment is NOT set (e.g., Card payment)
         if (
+            !deferOnlinePayment &&
             createdOrder?.pkOrderId &&
             (values.paymentMethod === "card" || values.paymentMethod === "gcash")
         ) {
@@ -181,7 +184,6 @@ export async function submitCheckoutOrder(params: {
                     method: "POST",
                     body: JSON.stringify({
                         orderId: createdOrder.pkOrderId,
-                        // Backend PaymentMethod enum: 2 = Gcash, 4 = Card
                         method: values.paymentMethod === "gcash" ? 2 : 4,
                         providerReference:
                             providerReference ??
