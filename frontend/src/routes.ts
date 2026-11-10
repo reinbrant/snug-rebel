@@ -4,6 +4,7 @@ export const ROUTES = {
   about: '/about',
   tracking: '/tracking',
   checkout: '/checkout',
+  mockQrPay: '/mock-qr-pay',
   signIn: '/sign-in',
   signUp: '/sign-up',
   verifyEmail: '/verify-email',

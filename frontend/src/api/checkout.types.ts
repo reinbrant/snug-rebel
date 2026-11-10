@@ -18,7 +18,7 @@ export const COURIER_OPTIONS: CourierOption[] = [
     { id: "lbc", name: "LBC", etaLabel: "1 to 3 days", daysMin: 1, daysMax: 3, fee: 150 },
 ];
 
-export type PaymentOptionId = "cod" | "cod_ewallet";
+export type PaymentOptionId = "cod" | "cod_ewallet" | "card" | "gcash";
 
 export interface CheckoutFormValues {
     firstName: string;

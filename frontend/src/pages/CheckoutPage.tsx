@@ -4,9 +4,17 @@ import {
 	useMemo,
 	useState,
 	useRef,
+	useCallback,
 	type CSSProperties,
 } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import {
+	CreditCard,
+	ExternalLink,
+	Loader2,
+	QrCode,
+	ShieldCheck,
+} from "lucide-react";
 import checkoutHeaderSvg from "../assets/checkout_page_header.svg";
 import redStarGraphicSvg from "../assets/checkout_redstar_graphic.svg";
 import orderNoContainerSvg from "../assets/checkout_orderno_container.svg";
@@ -34,6 +42,15 @@ import { ROUTES } from "../routes";
 
 type ExtendedFormValues = CheckoutFormValues & { customerNote: string };
 type ValidationErrors = Partial<Record<keyof ExtendedFormValues, string>>;
+
+interface CardFormDetails {
+	cardholderName: string;
+	cardNumber: string;
+	expiry: string;
+	cvc: string;
+}
+
+type CardErrors = Partial<Record<keyof CardFormDetails, string>>;
 
 const SHIPPING_DISCOUNT = 60;
 
@@ -75,6 +92,30 @@ function formatDeliveryRange(
 	const month = end.toLocaleDateString("en-US", { month: "short" });
 
 	return `${startDay} ${startNum} - ${endDay} ${endNum} ${month}`;
+}
+
+function formatCardNumber(raw: string): string {
+	const digits = raw.replace(/\D/g, "").slice(0, 16);
+	return digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+function formatCardExpiry(raw: string): string {
+	const digits = raw.replace(/\D/g, "").slice(0, 4);
+	if (digits.length <= 2) return digits;
+	return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function paymentMethodDisplayName(method: PaymentOptionId): string {
+	switch (method) {
+		case "cod":
+			return "Cash on Delivery";
+		case "cod_ewallet":
+			return "COD + E-Wallet on Arrival";
+		case "card":
+			return "Credit / Debit Card (Paid)";
+		case "gcash":
+			return "GCash / QR Ph (Paid)";
+	}
 }
 
 export default function CheckoutPage() {
@@ -151,6 +192,23 @@ function CheckoutForm() {
 		voucherCode: "",
 		agreedToTerms: false,
 	});
+
+	// Mock Card State
+	const [cardDetails, setCardDetails] = useState<CardFormDetails>({
+		cardholderName: "",
+		cardNumber: "",
+		expiry: "",
+		cvc: "",
+	});
+	const [cardErrors, setCardErrors] = useState<CardErrors>({});
+	const [cardProcessingStage, setCardProcessingStage] = useState<
+		string | null
+	>(null);
+
+	// Mock QR Modal State
+	const [qrModalOpen, setQrModalOpen] = useState(false);
+	const [qrSessionId, setQrSessionId] = useState<string>("");
+	const [qrConfirmedRef, setQrConfirmedRef] = useState<string | null>(null);
 
 	const [customCashAmount, setCustomCashAmount] = useState("");
 	const [errors, setErrors] = useState<ValidationErrors>({});
@@ -315,6 +373,37 @@ function CheckoutForm() {
 		}
 	}
 
+	function validateCardDetails(): CardErrors {
+		const next: CardErrors = {};
+		if (cardDetails.cardholderName.trim().length < 3) {
+			next.cardholderName = "Enter the name on the card.";
+		}
+		const digits = cardDetails.cardNumber.replace(/\D/g, "");
+		if (digits.length !== 16) {
+			next.cardNumber = "Enter a valid 16-digit card number.";
+		}
+		if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cardDetails.expiry)) {
+			next.expiry = "Use MM/YY format.";
+		} else {
+			const [mmStr, yyStr] = cardDetails.expiry.split("/");
+			const expMonth = Number(mmStr);
+			const expYear = 2000 + Number(yyStr);
+			const now = new Date();
+			const currentMonth = now.getMonth() + 1;
+			const currentYear = now.getFullYear();
+			if (
+				expYear < currentYear ||
+				(expYear === currentYear && expMonth < currentMonth)
+			) {
+				next.expiry = "This card is expired.";
+			}
+		}
+		if (!/^\d{3,4}$/.test(cardDetails.cvc)) {
+			next.cvc = "Enter a 3 or 4-digit CVC.";
+		}
+		return next;
+	}
+
 	function validateAll(): ValidationErrors {
 		const nextErrors: ValidationErrors = {};
 		(Object.keys(values) as Array<keyof ExtendedFormValues>).forEach(
@@ -369,10 +458,144 @@ function CheckoutForm() {
 		}
 	}
 
+	const finalizeOrderSubmission = useCallback(
+		async (providerReference?: string) => {
+			setSubmitting(true);
+			setSubmitError(null);
+			try {
+				let cashLabel = "";
+				if (values.paymentMethod === "cod") {
+					if (values.cashReadyOption === "custom")
+						cashLabel = `Custom amount - ${formatPrice(Number(customCashAmount) || finalTotal)}`;
+					else
+						cashLabel =
+							cashReadyChoices.find(
+								(c) => c.id === values.cashReadyOption,
+							)?.label ?? cashReadyChoices[0].label;
+				} else if (values.paymentMethod === "cod_ewallet") {
+					cashLabel = "E-Wallet on Arrival";
+				} else if (values.paymentMethod === "card") {
+					const last4 = cardDetails.cardNumber
+						.replace(/\D/g, "")
+						.slice(-4);
+					cashLabel = `Paid via Card (•••• ${last4})`;
+				} else {
+					cashLabel = `Paid via GCash QR (${providerReference ?? "Verified"})`;
+				}
+
+				const confirmed = await submitCheckoutOrder({
+					owner,
+					isBuyNow: Boolean(buyNowItems),
+					items: checkoutItems,
+					subtotal: activeSubtotal,
+					shippingDiscount,
+					voucher,
+					values: { ...values, cashReadyOption: cashLabel },
+					providerReference,
+				});
+
+				confirmed.items = confirmed.items.map((ci) => {
+					const variantId =
+						(ci as CartLine & { fkProductVariantId?: string })
+							.fkProductVariantId ?? ci.id;
+					const cartRef = checkoutItems.find(
+						(item) =>
+							item.id === variantId ||
+							(item as CartLine & { productVariantId?: string })
+								.productVariantId === variantId,
+					);
+					return {
+						...ci,
+						imageUrl: cartRef?.imageUrl ?? null,
+					} as CartLine;
+				});
+
+				setQrModalOpen(false);
+				setCardProcessingStage(null);
+				setConfirmedOrder(confirmed);
+				if (!buyNowItems) await clear();
+				window.scrollTo({ top: 0, behavior: "smooth" });
+			} catch (err) {
+				setCardProcessingStage(null);
+				setQrModalOpen(false);
+				setSubmitError(
+					err instanceof Error
+						? err.message
+						: "Failed to place order. Please try again.",
+				);
+			} finally {
+				setSubmitting(false);
+			}
+		},
+		[
+			values,
+			customCashAmount,
+			finalTotal,
+			cashReadyChoices,
+			cardDetails.cardNumber,
+			owner,
+			buyNowItems,
+			checkoutItems,
+			activeSubtotal,
+			shippingDiscount,
+			voucher,
+			clear,
+		],
+	);
+
+	// Listen for QR scan confirmation from the separate MockQrPaymentPage
+	useEffect(() => {
+		if (!qrModalOpen || !qrSessionId) return;
+
+		const handleConfirmedSignal = (refNo: string) => {
+			if (qrConfirmedRef) return;
+			setQrConfirmedRef(refNo);
+			setTimeout(() => {
+				void finalizeOrderSubmission(refNo);
+			}, 900);
+		};
+
+		const onStorage = (e: StorageEvent) => {
+			if (e.key === `snug-qr-paid-${qrSessionId}` && e.newValue) {
+				try {
+					const data = JSON.parse(e.newValue);
+					if (data?.status === "PAID") {
+						handleConfirmedSignal(
+							data.referenceNumber || `QR-${Date.now()}`,
+						);
+					}
+				} catch {
+					// ignore parse error
+				}
+			}
+		};
+
+		let bc: BroadcastChannel | null = null;
+		if (typeof BroadcastChannel !== "undefined") {
+			bc = new BroadcastChannel("snug_qr_channel");
+			bc.onmessage = (event) => {
+				if (
+					event.data?.sessionId === qrSessionId &&
+					event.data?.status === "PAID"
+				) {
+					handleConfirmedSignal(
+						event.data.referenceNumber || `QR-${Date.now()}`,
+					);
+				}
+			};
+		}
+
+		window.addEventListener("storage", onStorage);
+		return () => {
+			window.removeEventListener("storage", onStorage);
+			bc?.close();
+		};
+	}, [qrModalOpen, qrSessionId, qrConfirmedRef, finalizeOrderSubmission]);
+
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
 		setSubmitError(null);
-		if (cartBusy) return;
+		if (cartBusy || submitting) return;
 
 		if (checkoutItems.length === 0) {
 			setSubmitError("Your bag is empty. Add items before checking out.");
@@ -394,62 +617,56 @@ function CheckoutForm() {
 			agreedToTerms: true,
 		});
 
-		if (Object.keys(validation).length > 0) return;
-
-		setSubmitting(true);
-		try {
-			let cashLabel = "";
-			if (values.paymentMethod === "cod") {
-				if (values.cashReadyOption === "custom")
-					cashLabel = `Custom amount - ${formatPrice(Number(customCashAmount) || finalTotal)}`;
-				else
-					cashLabel =
-						cashReadyChoices.find(
-							(c) => c.id === values.cashReadyOption,
-						)?.label ?? cashReadyChoices[0].label;
-			} else {
-				cashLabel = "E-Wallet on Arrival (Disregarded)";
+		if (values.paymentMethod === "card") {
+			const cErrors = validateCardDetails();
+			setCardErrors(cErrors);
+			if (
+				Object.keys(validation).length > 0 ||
+				Object.keys(cErrors).length > 0
+			) {
+				return;
 			}
 
-			const confirmed = await submitCheckoutOrder({
-				owner,
-				isBuyNow: Boolean(buyNowItems),
-				items: checkoutItems,
-				subtotal: activeSubtotal,
-				shippingDiscount,
-				voucher,
-				values: { ...values, cashReadyOption: cashLabel },
-			});
-
-			confirmed.items = confirmed.items.map((ci) => {
-				const variantId =
-					(ci as CartLine & { fkProductVariantId?: string })
-						.fkProductVariantId ?? ci.id;
-				const cartRef = checkoutItems.find(
-					(item) =>
-						item.id === variantId ||
-						(item as CartLine & { productVariantId?: string })
-							.productVariantId === variantId,
-				);
-				return {
-					...ci,
-					imageUrl: cartRef?.imageUrl ?? null,
-				} as CartLine;
-			});
-
-			setConfirmedOrder(confirmed);
-			if (!buyNowItems) await clear();
-			window.scrollTo({ top: 0, behavior: "smooth" });
-		} catch (err) {
-			setSubmitError(
-				err instanceof Error
-					? err.message
-					: "Failed to place order. Please try again.",
+			// Simulate card gateway verification and authorization
+			setSubmitting(true);
+			setCardProcessingStage("VERIFYING CARD FORMAT & ISSUER...");
+			await new Promise((r) => setTimeout(r, 950));
+			setCardProcessingStage(
+				`AUTHORIZING ${formatPrice(finalTotal)} TRANSACTION...`,
 			);
-		} finally {
-			setSubmitting(false);
+			await new Promise((r) => setTimeout(r, 1100));
+			setCardProcessingStage("PAYMENT APPROVED! FINALIZING DROP...");
+			await new Promise((r) => setTimeout(r, 500));
+
+			const last4 = cardDetails.cardNumber.replace(/\D/g, "").slice(-4);
+			await finalizeOrderSubmission(`CARD-${last4}-${Date.now()}`);
+			return;
 		}
+
+		if (Object.keys(validation).length > 0) return;
+
+		if (values.paymentMethod === "gcash") {
+			// Open the QR Code Scanner Modal
+			const newSession = `SRQR-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+			setQrConfirmedRef(null);
+			setQrSessionId(newSession);
+			setQrModalOpen(true);
+			return;
+		}
+
+		await finalizeOrderSubmission();
 	}
+
+	const qrTargetUrl = useMemo(() => {
+		if (!qrSessionId || typeof window === "undefined") return "";
+		const params = new URLSearchParams({
+			session: qrSessionId,
+			amount: String(finalTotal),
+			recipient:
+				`${values.firstName.trim()} ${values.lastName.trim()}`.trim(),
+		});
+		return `${window.location.origin}${ROUTES.mockQrPay}?${params.toString()}`;
+	}, [qrSessionId, finalTotal, values.firstName, values.lastName]);
 
 	if (confirmedOrder) {
 		const deliveryWindow = formatDeliveryRange(
@@ -487,7 +704,6 @@ function CheckoutForm() {
 								{confirmedOrder.orderNumber}
 							</span>
 
-							{/* POSITIONED & TILTED INSIDE THE WRAPPER */}
 							<button
 								type="button"
 								onClick={() => {
@@ -631,7 +847,10 @@ function CheckoutForm() {
 									<p className="mt-3 text-sm text-neutral-600">
 										{confirmedOrder.paymentMethod === "cod"
 											? "Pay in cash to the rider on delivery."
-											: "Pay the rider by GCash or Maya QR at your door."}
+											: confirmedOrder.paymentMethod ===
+												  "cod_ewallet"
+												? "Pay the rider by GCash or Maya QR at your door."
+												: `Paid online (${confirmedOrder.cashReadyLabel}).`}
 									</p>
 								</div>
 							</div>
@@ -672,14 +891,16 @@ function CheckoutForm() {
 									</h3>
 								</div>
 								<p className="mt-3 font-display text-2xl font-extrabold">
-									{confirmedOrder.paymentMethod === "cod"
-										? "Cash on Delivery"
-										: "COD + E-Wallet on Arrival"}
+									{paymentMethodDisplayName(
+										confirmedOrder.paymentMethod,
+									)}
 								</p>
 								<p className="mt-1 font-mono text-sm text-neutral-300">
-									Have{" "}
-									{formatPeso(confirmedOrder.totalAmount)}{" "}
-									ready for the rider.
+									{confirmedOrder.paymentMethod === "cod" ||
+									confirmedOrder.paymentMethod ===
+										"cod_ewallet"
+										? `Have ${formatPeso(confirmedOrder.totalAmount)} ready for the rider.`
+										: `${confirmedOrder.cashReadyLabel} — No cash needed on delivery.`}
 								</p>
 							</div>
 
@@ -1179,6 +1400,13 @@ function CheckoutForm() {
 										<textarea
 											rows={2}
 											maxLength={1000}
+											value={values.landmarkNotes}
+											onChange={(e) =>
+												updateField(
+													"landmarkNotes",
+													e.target.value,
+												)
+											}
 											className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-[15px] text-[#141414] focus:outline-none"
 											placeholder="Landmarks, delivery instructions..."
 										/>
@@ -1242,6 +1470,7 @@ function CheckoutForm() {
 							</div>
 
 							<div className="space-y-4">
+								{/* 1. CASH ON DELIVERY */}
 								<label
 									onClick={() =>
 										updateField("paymentMethod", "cod")
@@ -1277,6 +1506,7 @@ function CheckoutForm() {
 									</p>
 								</label>
 
+								{/* 2. COD + E-WALLET ON ARRIVAL */}
 								<label
 									onClick={() =>
 										updateField(
@@ -1318,69 +1548,315 @@ function CheckoutForm() {
 									</p>
 								</label>
 
-								<div className="pt-2">
+								{/* 3. MOCK CREDIT / DEBIT CARD */}
+								<div className="flex flex-col">
 									<label
-										className={`block font-display text-sm font-bold uppercase tracking-wider mb-2 ${values.paymentMethod === "cod_ewallet" ? "opacity-50" : ""}`}
-									>
-										CASH READY
-									</label>
-									<select
-										value={values.cashReadyOption}
-										disabled={
-											values.paymentMethod ===
-											"cod_ewallet"
-										}
-										onChange={(e) =>
+										onClick={() =>
 											updateField(
-												"cashReadyOption",
-												e.target.value,
+												"paymentMethod",
+												"card" as PaymentOptionId,
 											)
 										}
-										className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] disabled:opacity-40 disabled:bg-neutral-800 disabled:text-neutral-400 disabled:cursor-not-allowed focus:outline-none"
+										className={`relative block cursor-pointer p-4 border transition-colors ${values.paymentMethod === "card" ? "bg-[#e50914] border-[#e50914] text-white" : "bg-transparent border-neutral-700 text-white hover:border-neutral-500"}`}
 									>
-										{cashReadyChoices.map((choice) => (
-											<option
-												key={choice.id}
-												value={choice.id}
-											>
-												{choice.label}
-											</option>
-										))}
-									</select>
-									<div
-										className={`mt-1 h-[3px] w-3/5 ${values.paymentMethod === "cod_ewallet" ? "bg-neutral-600 opacity-50" : "bg-[#e50914]"}`}
-									/>
+										<div className="flex items-center gap-2.5">
+											<input
+												type="radio"
+												name="paymentMethod"
+												checked={
+													values.paymentMethod ===
+													"card"
+												}
+												onChange={() =>
+													updateField(
+														"paymentMethod",
+														"card" as PaymentOptionId,
+													)
+												}
+												className="sr-only"
+											/>
+											<span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white">
+												{values.paymentMethod ===
+													"card" && (
+													<span className="h-2 w-2 rounded-full bg-white" />
+												)}
+											</span>
+											<CreditCard size={16} />
+											<span className="font-mono text-sm font-bold uppercase tracking-wider">
+												CREDIT / DEBIT CARD
+											</span>
+										</div>
+										<p className="mt-1.5 pl-7 font-mono text-xs text-white/90">
+											Instant online card authorization
+											(Visa / Mastercard).
+										</p>
+									</label>
 
-									{values.paymentMethod === "cod" &&
-										values.cashReadyOption === "custom" && (
-											<div className="mt-4">
+									{values.paymentMethod === "card" && (
+										<div className="border border-t-0 border-[#e50914] bg-[#1c1c1f] p-5 space-y-4">
+											<div>
+												<label className="block font-display text-xs font-bold uppercase tracking-wider mb-1.5 text-neutral-300">
+													NAME ON CARD
+												</label>
+												<input
+													type="text"
+													maxLength={100}
+													value={
+														cardDetails.cardholderName
+													}
+													onChange={(e) => {
+														setCardDetails((p) => ({
+															...p,
+															cardholderName:
+																e.target.value,
+														}));
+														setCardErrors((p) => ({
+															...p,
+															cardholderName:
+																undefined,
+														}));
+													}}
+													placeholder="JUAN DELA CRUZ"
+													className="w-full bg-[#f5f3ec] px-3 py-2 font-mono text-sm uppercase text-[#141414] focus:outline-none"
+												/>
+												{cardErrors.cardholderName && (
+													<p className="mt-1 font-mono text-xs text-red-400">
+														{
+															cardErrors.cardholderName
+														}
+													</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block font-display text-xs font-bold uppercase tracking-wider mb-1.5 text-neutral-300">
+													CARD NUMBER (16 DIGITS)
+												</label>
 												<input
 													type="text"
 													inputMode="numeric"
-													maxLength={15}
-													value={customCashAmount}
-													onChange={(e) =>
-														setCustomCashAmount(
-															e.target.value.replace(
-																/\D/g,
-																"",
-															),
-														)
+													maxLength={19}
+													value={
+														cardDetails.cardNumber
 													}
-													placeholder="Enter custom cash amount (e.g. 2000)"
-													className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none border border-neutral-400"
+													onChange={(e) => {
+														setCardDetails((p) => ({
+															...p,
+															cardNumber:
+																formatCardNumber(
+																	e.target
+																		.value,
+																),
+														}));
+														setCardErrors((p) => ({
+															...p,
+															cardNumber:
+																undefined,
+														}));
+													}}
+													placeholder="4532 •••• •••• ••••"
+													className="w-full bg-[#f5f3ec] px-3 py-2 font-mono text-sm tracking-widest text-[#141414] focus:outline-none"
 												/>
-												<div className="mt-1 h-[3px] w-2/5 bg-[#e50914]" />
+												{cardErrors.cardNumber && (
+													<p className="mt-1 font-mono text-xs text-red-400">
+														{cardErrors.cardNumber}
+													</p>
+												)}
 											</div>
-										)}
+
+											<div className="grid grid-cols-2 gap-4">
+												<div>
+													<label className="block font-display text-xs font-bold uppercase tracking-wider mb-1.5 text-neutral-300">
+														EXPIRY (MM/YY)
+													</label>
+													<input
+														type="text"
+														inputMode="numeric"
+														maxLength={5}
+														value={
+															cardDetails.expiry
+														}
+														onChange={(e) => {
+															setCardDetails(
+																(p) => ({
+																	...p,
+																	expiry: formatCardExpiry(
+																		e.target
+																			.value,
+																	),
+																}),
+															);
+															setCardErrors(
+																(p) => ({
+																	...p,
+																	expiry: undefined,
+																}),
+															);
+														}}
+														placeholder="08/29"
+														className="w-full bg-[#f5f3ec] px-3 py-2 font-mono text-sm text-[#141414] focus:outline-none"
+													/>
+													{cardErrors.expiry && (
+														<p className="mt-1 font-mono text-xs text-red-400">
+															{cardErrors.expiry}
+														</p>
+													)}
+												</div>
+
+												<div>
+													<label className="block font-display text-xs font-bold uppercase tracking-wider mb-1.5 text-neutral-300">
+														CVC / CVV
+													</label>
+													<input
+														type="password"
+														inputMode="numeric"
+														maxLength={4}
+														value={cardDetails.cvc}
+														onChange={(e) => {
+															setCardDetails(
+																(p) => ({
+																	...p,
+																	cvc: e.target.value
+																		.replace(
+																			/\D/g,
+																			"",
+																		)
+																		.slice(
+																			0,
+																			4,
+																		),
+																}),
+															);
+															setCardErrors(
+																(p) => ({
+																	...p,
+																	cvc: undefined,
+																}),
+															);
+														}}
+														placeholder="123"
+														className="w-full bg-[#f5f3ec] px-3 py-2 font-mono text-sm text-[#141414] focus:outline-none"
+													/>
+													{cardErrors.cvc && (
+														<p className="mt-1 font-mono text-xs text-red-400">
+															{cardErrors.cvc}
+														</p>
+													)}
+												</div>
+											</div>
+										</div>
+									)}
 								</div>
+
+								{/* 4. MOCK GCASH / QR PH */}
+								<label
+									onClick={() =>
+										updateField(
+											"paymentMethod",
+											"gcash" as PaymentOptionId,
+										)
+									}
+									className={`relative block cursor-pointer p-4 border transition-colors ${values.paymentMethod === "gcash" ? "bg-[#e50914] border-[#e50914] text-white" : "bg-transparent border-neutral-700 text-white hover:border-neutral-500"}`}
+								>
+									<div className="flex items-center gap-2.5">
+										<input
+											type="radio"
+											name="paymentMethod"
+											checked={
+												values.paymentMethod === "gcash"
+											}
+											onChange={() =>
+												updateField(
+													"paymentMethod",
+													"gcash" as PaymentOptionId,
+												)
+											}
+											className="sr-only"
+										/>
+										<span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white">
+											{values.paymentMethod ===
+												"gcash" && (
+												<span className="h-2 w-2 rounded-full bg-white" />
+											)}
+										</span>
+										<QrCode size={16} />
+										<span className="font-mono text-sm font-bold uppercase tracking-wider">
+											GCASH / QR PH (SCAN TO PAY)
+										</span>
+									</div>
+									<p className="mt-1.5 pl-7 font-mono text-xs text-white/90">
+										Generates a dynamic QR code modal upon
+										placing your order.
+									</p>
+								</label>
+
+								{/* CASH READY DROPDOWN (Only shown for COD / COD E-Wallet) */}
+								{(values.paymentMethod === "cod" ||
+									values.paymentMethod === "cod_ewallet") && (
+									<div className="pt-2">
+										<label
+											className={`block font-display text-sm font-bold uppercase tracking-wider mb-2 ${values.paymentMethod === "cod_ewallet" ? "opacity-50" : ""}`}
+										>
+											CASH READY
+										</label>
+										<select
+											value={values.cashReadyOption}
+											disabled={
+												values.paymentMethod ===
+												"cod_ewallet"
+											}
+											onChange={(e) =>
+												updateField(
+													"cashReadyOption",
+													e.target.value,
+												)
+											}
+											className="w-full appearance-none bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] disabled:opacity-40 disabled:bg-neutral-800 disabled:text-neutral-400 disabled:cursor-not-allowed focus:outline-none"
+										>
+											{cashReadyChoices.map((choice) => (
+												<option
+													key={choice.id}
+													value={choice.id}
+												>
+													{choice.label}
+												</option>
+											))}
+										</select>
+										<div
+											className={`mt-1 h-[3px] w-3/5 ${values.paymentMethod === "cod_ewallet" ? "bg-neutral-600 opacity-50" : "bg-[#e50914]"}`}
+										/>
+
+										{values.paymentMethod === "cod" &&
+											values.cashReadyOption ===
+												"custom" && (
+												<div className="mt-4">
+													<input
+														type="text"
+														inputMode="numeric"
+														maxLength={15}
+														value={customCashAmount}
+														onChange={(e) =>
+															setCustomCashAmount(
+																e.target.value.replace(
+																	/\D/g,
+																	"",
+																),
+															)
+														}
+														placeholder="Enter custom cash amount (e.g. 2000)"
+														className="w-full bg-[#f5f3ec] px-3 py-2.5 font-mono text-base text-[#141414] focus:outline-none border border-neutral-400"
+													/>
+													<div className="mt-1 h-[3px] w-2/5 bg-[#e50914]" />
+												</div>
+											)}
+									</div>
+								)}
 							</div>
 						</section>
 					</div>
 
 					{/* RIGHT SIDE: Sticky Receipt */}
 					<div className="relative lg:sticky lg:top-[calc(var(--nav-h)+2rem)] h-fit">
-						{/* Red star graphic attached to the sticky right side so it follows the user natively */}
 						<img
 							src={redStarGraphicSvg}
 							alt=""
@@ -1536,13 +2012,18 @@ function CheckoutForm() {
 									<p className="mt-3 text-[15px] text-neutral-600">
 										{values.paymentMethod === "cod"
 											? "Pay in cash to the rider on delivery."
-											: "Pay the rider by GCash or Maya QR at your door."}
+											: values.paymentMethod ===
+												  "cod_ewallet"
+												? "Pay the rider by GCash or Maya QR at your door."
+												: values.paymentMethod ===
+													  "card"
+													? "Card will be authorized immediately upon placing order."
+													: "Scan the GCash / QR Ph code in the next step to confirm."}
 									</p>
 								</div>
 							</div>
 
 							<div className="relative z-40 mt-6 pl-2">
-								{/* UPDATED: Checkbox intercept logic! */}
 								<label className="flex items-center gap-3 cursor-pointer font-mono text-[15px] text-[#141414]">
 									<input
 										type="checkbox"
@@ -1603,16 +2084,134 @@ function CheckoutForm() {
 									}
 								>
 									{submitting
-										? "PLACING ORDER..."
+										? "PROCESSING..."
 										: values.paymentMethod === "cod"
 											? "PLACE ORDER - COD"
-											: "PLACE ORDER - COD / QR"}
+											: values.paymentMethod ===
+												  "cod_ewallet"
+												? "PLACE ORDER - COD / QR"
+												: values.paymentMethod ===
+													  "card"
+													? "PAY & PLACE ORDER - CARD"
+													: "GENERATE QR & PAY"}
 								</AngledButton>
 							</div>
 						</div>
 					</div>
 				</form>
 			</div>
+
+			{/* MOCK CARD PROCESSING OVERLAY */}
+			{cardProcessingStage && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+					<div className="w-full max-w-md bg-[#141414] text-white border-2 border-[#e50914] shadow-[8px_8px_0_#e50914] p-8 font-mono text-center space-y-5">
+						<Loader2
+							size={44}
+							className="mx-auto animate-spin text-[#e50914]"
+						/>
+						<h3 className="font-display text-2xl font-black uppercase tracking-wide">
+							PROCESSING CARD
+						</h3>
+						<p className="text-xs text-neutral-300 uppercase tracking-widest">
+							{cardProcessingStage}
+						</p>
+						<div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 pt-2">
+							<ShieldCheck size={15} />
+							<span>256-Bit Encrypted Mock Gateway</span>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* MOCK GCASH / QR SCANNER MODAL */}
+			{qrModalOpen && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm select-text"
+					onClick={() => !submitting && setQrModalOpen(false)}
+				>
+					<div
+						className="relative w-full max-w-md bg-[#f5f3ec] border-4 border-[#141414] shadow-[10px_10px_0_#e50914] p-6 sm:p-8 font-mono text-[#141414]"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between border-b-2 border-dashed border-[#141414] pb-4 mb-5">
+							<div>
+								<h2 className="font-display text-2xl font-black uppercase tracking-tight">
+									SCAN TO PAY (GCASH / QR)
+								</h2>
+								<p className="text-xs text-neutral-600">
+									Amount Due:{" "}
+									<strong className="text-[#e50914]">
+										{formatPrice(finalTotal)}
+									</strong>
+								</p>
+							</div>
+							<button
+								type="button"
+								disabled={submitting}
+								onClick={() => setQrModalOpen(false)}
+								className="h-8 w-8 flex items-center justify-center border border-[#141414] font-display text-xl font-black hover:bg-[#e50914] hover:text-white transition-colors cursor-pointer"
+								aria-label="Close QR modal"
+							>
+								&times;
+							</button>
+						</div>
+
+						{qrConfirmedRef ? (
+							<div className="py-10 text-center space-y-4">
+								<Loader2
+									size={40}
+									className="mx-auto animate-spin text-emerald-600"
+								/>
+								<p className="font-display text-xl font-black uppercase text-emerald-700">
+									QR PAYMENT RECEIVED!
+								</p>
+								<p className="text-xs text-neutral-600">
+									Reference: {qrConfirmedRef} — Confirming
+									your order...
+								</p>
+							</div>
+						) : (
+							<div className="space-y-5 text-center">
+								<div className="mx-auto w-56 h-56 bg-white border-4 border-[#141414] p-3 flex items-center justify-center shadow-[4px_4px_0_#141414]">
+									<img
+										src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrTargetUrl)}`}
+										alt="Scan QR to Pay"
+										className="w-full h-full object-contain"
+									/>
+								</div>
+
+								<div className="flex items-center justify-center gap-2 text-xs font-bold uppercase text-neutral-700">
+									<Loader2
+										size={15}
+										className="animate-spin text-[#e50914]"
+									/>
+									<span>
+										Waiting for QR scan confirmation...
+									</span>
+								</div>
+
+								<p className="text-xs text-neutral-600 leading-relaxed">
+									Scan the QR code with your phone, or click
+									below to open the QR Payment Confirmation
+									Page directly in a new tab.
+								</p>
+
+								<div className="pt-2 space-y-2.5">
+									<a
+										href={qrTargetUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="w-full py-3 px-4 bg-[#141414] text-white font-display text-sm font-black uppercase tracking-wider hover:bg-[#e50914] transition-colors flex items-center justify-center gap-2"
+									>
+										<span>OPEN QR CONFIRMATION PAGE</span>
+										<ExternalLink size={15} />
+									</a>
+								</div>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
 
 			{/* TERMS AND RETURN POLICY MODAL */}
 			{showTermsModal && (
