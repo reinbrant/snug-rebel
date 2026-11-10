@@ -32,6 +32,13 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
+        var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var user = id == null ? null : await context.Users.FindAsync(id);
+        if (user != null)
+        {
+            context.AuditLogs.Add(AuditEvents.Authentication(user, "LOGOUT", "Signed out of the current session."));
+            await context.SaveChangesAsync();
+        }
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return NoContent();
     }
@@ -71,6 +78,8 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
             context.Users.Add(user);
             await context.SaveChangesAsync();
             await verification.Send(user, cancellationToken);
+            context.AuditLogs.Add(AuditEvents.Authentication(user, "REGISTER", "Created a customer account; email verification is required before sign-in."));
+            await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync();
             return Accepted(new { verificationRequired = true, email = user.UserEmail,
                 message = "Check your email to verify your account before signing in." });
@@ -162,7 +171,7 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
             return InvalidCode();
         }
         await carts.MergeGuestCart(user.PkUserId, request.SessionToken);
-        context.AuditLogs.Add(new AuditLog { FkUserId = user.PkUserId, Action = "LOGIN", CreatedAt = DateTime.UtcNow });
+        context.AuditLogs.Add(AuditEvents.Authentication(user, "LOGIN_EMAIL_CODE", "Signed in using a one-time email code."));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await SignIn(user);
@@ -208,7 +217,7 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
         // Invalidate outstanding sign-in codes as well as the consumed reset code.
         await context.EmailOtps.Where(o => o.UserId == user.PkUserId && o.Purpose == EmailOtpService.SignIn)
             .ExecuteUpdateAsync(setters => setters.SetProperty(o => o.Attempts, 5), cancellationToken);
-        context.AuditLogs.Add(new AuditLog { FkUserId = user.PkUserId, Action = "PASSWORD_RESET", CreatedAt = DateTime.UtcNow });
+        context.AuditLogs.Add(AuditEvents.Authentication(user, "PASSWORD_RESET", "Reset account password using an email code; existing sessions and sign-in codes were invalidated."));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -246,7 +255,7 @@ public class AuthController(AppDbContext context, CustomerCartService carts, Ema
 
         await using var transaction = await context.Database.BeginTransactionAsync();
         await carts.MergeGuestCart(user.PkUserId, request.SessionToken);
-        context.AuditLogs.Add(new AuditLog { FkUserId = user.PkUserId, Action = "LOGIN", CreatedAt = DateTime.UtcNow });
+        context.AuditLogs.Add(AuditEvents.Authentication(user, "LOGIN_PASSWORD", "Signed in using an email address and password."));
         await context.SaveChangesAsync();
         await transaction.CommitAsync();
         await SignIn(user);

@@ -26,3 +26,8 @@ accounts, old-password rejection, and session revocation. Review checks cover
 IDs from tracking and account orders, authentication, session-based ownership,
 delivered-order eligibility, duplicates, and a real browser submission with the
 account-order fallback disabled.
+
+Audit checks also cover typed actions, generated record IDs, actor attribution,
+before/after values, anonymous/customer/staff access restrictions, filtering,
+pagination, privacy, and transactional rollback when an audit write fails.
+The browser opens the admin audit page and verifies filtering and expanded details.

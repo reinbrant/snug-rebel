@@ -57,6 +57,10 @@ Collections have been removed from admin navigation, application models, and API
 
 ## Verification
 
+For the enhanced admin audit log, apply `backend/SQL/audit_log_details.sql`
+before deploying the backend and admin frontend. See [audit history](AUDITING.md)
+for supported action types, access rules, and validation.
+
 ```bash
 dotnet build backend
 npm --prefix admin run build

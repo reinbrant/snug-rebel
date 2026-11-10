@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using backend.Models;
@@ -11,9 +11,10 @@ public partial class AppDbContext : DbContext
     {
     }
 
-    public AppDbContext(DbContextOptions<AppDbContext> options)
+    public AppDbContext(DbContextOptions<AppDbContext> options, IHttpContextAccessor? httpContextAccessor = null)
         : base(options)
     {
+        HttpContextAccessor = httpContextAccessor;
     }
 
     public virtual DbSet<Address> Addresses { get; set; }
@@ -158,6 +159,16 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(40)
                 .HasDefaultValueSql("('log'::text || (gen_random_uuid())::text)")
                 .HasColumnName("_pk_audit_log_id");
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.ActionType);
+            entity.Property(e => e.ActionType).HasColumnName("action_type").HasMaxLength(40);
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.EntityType).HasColumnName("entity_type").HasMaxLength(60);
+            entity.Property(e => e.EntityId).HasColumnName("entity_id").HasMaxLength(100);
+            entity.Property(e => e.ActorName).HasColumnName("actor_name").HasMaxLength(220);
+            entity.Property(e => e.ActorRole).HasColumnName("actor_role").HasMaxLength(40);
+            entity.Property(e => e.Changes).HasColumnName("changes");
+            entity.Property(e => e.RequestId).HasColumnName("request_id").HasMaxLength(100);
             entity.Property(e => e.Action)
                 .HasMaxLength(100)
                 .HasColumnName("action");
