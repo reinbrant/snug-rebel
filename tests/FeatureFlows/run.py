@@ -5,6 +5,7 @@ and a PostgreSQL Docker container (PG_CONTAINER, default snug-onboarding-db).
 Uses only synthetic data; no external emails or production database access.
 """
 import http.cookiejar
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -72,9 +73,9 @@ def client():
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 
-def call(path, data=None, status=200, session=None):
+def call(path, data=None, status=200, session=None, method=None):
     request = urllib.request.Request(API + path, data=None if data is None else json.dumps(data).encode(),
-        headers={'Content-Type': 'application/json'})
+        headers={'Content-Type': 'application/json'}, method=method)
     try:
         response = (session or client()).open(request)
     except urllib.error.HTTPError as error:
@@ -104,6 +105,7 @@ stub = ThreadingHTTPServer(('127.0.0.1', 0), MailStub)
 threading.Thread(target=stub.serve_forever, daemon=True).start()
 API = f'http://127.0.0.1:{free_port()}'
 WEB = f'http://127.0.0.1:{free_port()}'
+ADMIN_WEB = f'http://127.0.0.1:{free_port()}'
 try:
     sql(f'CREATE DATABASE {DB}', 'postgres')
     with tempfile.TemporaryDirectory() as temporary:
@@ -114,12 +116,15 @@ try:
         # Exercise the same upgrade script twice to verify repeatability.
         upgrade = (ROOT / 'backend/SQL/password_reset.sql').read_text()
         sql(upgrade); sql(upgrade)
+        audit_upgrade = (ROOT / 'backend/SQL/audit_log_details.sql').read_text()
+        sql(audit_upgrade); sql(audit_upgrade)
         environment = os.environ | {
             'ConnectionStrings__DefaultConnection': f'Host=127.0.0.1;Port=5433;Database={DB};Username=snugdev',
             'ASPNETCORE_ENVIRONMENT': 'Development', 'ASPNETCORE_URLS': API,
             'Email__BrevoApiKey': 'local-test-only', 'Email__From': 'test@example.test',
             'Email__StorefrontUrl': WEB, 'Email__DevelopmentApiUrl': f'http://127.0.0.1:{stub.server_port}/',
             'Cors__AllowedOrigins__0': WEB,
+            'Cors__AllowedOrigins__1': ADMIN_WEB,
         }
         with open(Path(temporary) / 'api.log', 'w+') as log:
             processes.append(subprocess.Popen(['dotnet', str(ROOT / 'backend/bin/Debug/net10.0/backend.dll')],
@@ -206,6 +211,55 @@ try:
                     subprocess.run(['node', str(ROOT / 'tests/FeatureFlows/browser.cjs')], check=True,
                         env=os.environ | {'TEST_WEB_URL': WEB, 'TEST_API_URL': API,
                             'TEST_MAIL_URL': f'http://127.0.0.1:{stub.server_port}/'})
+            # Audit viewing is restricted to administrators, even though staff can mutate orders.
+            call('/api/Audit', status=401)
+            admin_password = 'New-password-123' if os.environ.get('SKIP_BROWSER') == '1' else 'Browser-password-123'
+            call('/api/Auth/login', {'email': EMAIL, 'password': admin_password}, session=session)
+            call('/api/Audit', status=403, session=session)
+            sql("INSERT INTO users (_pk_user_id, user_email, password_hash, first_name, last_name, phone_number, role, email_verification_required) SELECT 'feature-admin', 'admin@example.test', password_hash, 'Audit', 'Admin', '', 1, false FROM users WHERE user_email='customer@example.test'")
+            admin = client()
+            call('/api/Auth/login', {'email': 'admin@example.test', 'password': admin_password}, session=admin)
+            call('/api/Order/feature-order/status', {'status': 'Processing'}, 204, admin, method='PUT')
+            events = call('/api/Audit?actionType=Orders&search=FEATURE-DELIVERED', session=admin)
+            event = events['items'][0]
+            assert event['action'] == 'ORDER_UPDATED' and event['actorName'] == 'Audit Admin'
+            assert event['actorRole'] == 'Admin' and event['entityId'] == 'feature-order'
+            assert json.loads(event['changes'])['Status'] == {'Before': 'Delivered', 'After': 'Processing'}
+            assert event['requestId'] and datetime.fromisoformat(event['createdAt']).utcoffset() == timedelta(0)
+            category = call('/api/Category', {'categoryName': 'Audit category', 'slug': 'audit-category', 'isActive': True}, 201, admin)
+            created = call('/api/Audit?actionType=Categories', session=admin)['items'][0]
+            assert created['entityId'] == category['pkCategoryId'] and 'Audit category' in created['description']
+            before = int(sql('SELECT count(*) FROM audit_logs'))
+            call('/api/Category', {'categoryName': 'Invalid parent', 'fkParentCategoryId': 'missing-parent', 'isActive': True}, 500, admin)
+            assert int(sql('SELECT count(*) FROM audit_logs')) == before
+            sql("ALTER TABLE audit_logs ADD CONSTRAINT feature_audit_failure CHECK (description NOT LIKE '%Rollback sentinel%')")
+            call('/api/Category', {'categoryName': 'Rollback sentinel', 'isActive': True}, 500, admin)
+            assert sql("SELECT count(*) FROM categories WHERE category_name='Rollback sentinel'") == '0'
+            assert int(sql('SELECT count(*) FROM audit_logs')) == before
+            sql('ALTER TABLE audit_logs DROP CONSTRAINT feature_audit_failure')
+            page = call('/api/Audit?pageSize=1', session=admin)
+            assert len(page['items']) == 1 and page['total'] > 1
+            call('/api/Audit?page=0', status=400, session=admin)
+            raw = json.dumps(call('/api/Audit?pageSize=100', session=admin))
+            for secret in ['password_hash', 'code_hash', 'Browser-password-123', 'New-password-123', 'Great shirt']:
+                assert secret not in raw
+            sql("UPDATE users SET role=2 WHERE _pk_user_id='feature-admin'")
+            call('/api/Audit', status=403, session=admin)
+            sql("UPDATE users SET role=1 WHERE _pk_user_id='feature-admin'")
+            print('PASS: audit action types, generated record IDs, actor attribution, before/after values, rollback, filters, pagination, privacy and permissions', flush=True)
+            if os.environ.get('SKIP_BROWSER') != '1':
+                admin_web = ADMIN_WEB
+                sql('SELECT 1')
+                with open(Path(temporary) / 'admin-vite.log', 'w') as admin_log:
+                    processes.append(subprocess.Popen(['npm', 'run', 'dev', '--', '--host', '127.0.0.1', '--port', admin_web.rsplit(':', 1)[1], '--strictPort'], cwd=ROOT / 'admin',
+                        env=os.environ | {'VITE_API_BASE_URL': API}, stdout=admin_log, stderr=admin_log, start_new_session=True))
+                    for _ in range(100):
+                        try:
+                            client().open(admin_web); break
+                        except urllib.error.URLError:
+                            time.sleep(.1)
+                    subprocess.run(['node', str(ROOT / 'tests/FeatureFlows/audit-browser.cjs')], check=True,
+                        env=os.environ | {'TEST_ADMIN_URL': admin_web, 'TEST_API_URL': API})
 finally:
     import signal
     for process in reversed(processes):

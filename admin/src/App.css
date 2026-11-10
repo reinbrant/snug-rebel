@@ -1135,3 +1135,11 @@ textarea:focus {
 .product-images { display: flex; flex-wrap: wrap; gap: 1rem; }
 .product-image-entry { display: flex; flex-direction: column; gap: .5rem; max-width: 200px; }
 .product-image-entry img, .product-detail-image { width: 160px; height: 160px; object-fit: cover; border-radius: 8px; }
+
+.audit-filters { display:flex; flex-wrap:wrap; align-items:end; gap:1rem; margin:1.5rem 0; }
+.audit-filters label { display:grid; gap:.4rem; font-size:.85rem; }
+.audit-filters input, .audit-filters select { padding:.65rem; border:1px solid #888; border-radius:6px; background:var(--input-bg); color:inherit; }
+.audit-description { min-width:260px; max-width:540px; white-space:normal; overflow-wrap:anywhere; }
+.audit-id { max-width:160px; overflow-wrap:anywhere; font-size:.8rem; }
+.audit-pagination { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-top:1rem; }
+.table-wrap pre { max-width:420px; max-height:320px; overflow:auto; font-size:.75rem; }

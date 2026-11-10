@@ -51,6 +51,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     };
 });
 builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<CustomerCartService>();
 builder.Services.AddScoped<EmailVerificationService>();

@@ -23,6 +23,7 @@ import {
 import './App.css'
 import { loginWithEmailPassword } from './lib/auth'
 import { API_BASE, apiFetch, requestJson, readErrorMessage, resolveAssetUrl } from './lib/config'
+import { AuditLogPage } from './components/AuditLogPage'
 import { ProductImagesEditor } from './components/ProductImagesEditor'
 import { PredictiveAnalytics } from './components/PredictiveAnalytics'
 import { Model3DList } from './components/Model3DList'
@@ -87,6 +88,7 @@ const navItems = [
   { to: '/categories', label: 'Categories', icon: Tag },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/customers', label: 'Customers', icon: Users },
+  { to: '/audit', label: 'Audit log', icon: Activity },
 ]
 
 function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
@@ -156,6 +158,7 @@ function App() {
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/audit" element={session?.user.role === 'Admin' ? <AuditLogPage /> : <Navigate to="/" replace />} />
         </Route>
         <Route path="*" element={<Navigate to={session ? '/' : '/login'} replace />} />
       </Routes>
@@ -177,7 +180,7 @@ function ProtectedLayout({ session, onLogout, theme, onToggleTheme }: any) {
           </div>
         </div>
         <nav className="sidebar-nav" aria-label="Main navigation">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.filter(item => item.to !== '/audit' || session?.user.role === 'Admin').map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <Icon size={18} />
               <span>{label}</span>
