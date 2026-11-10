@@ -213,6 +213,7 @@ function CheckoutForm() {
 	const [pendingQrOrder, setPendingQrOrder] = useState<ConfirmedOrder | null>(
 		null,
 	);
+	const qrCompletedRef = useRef(false);
 
 	const [customCashAmount, setCustomCashAmount] = useState("");
 	const [errors, setErrors] = useState<ValidationErrors>({});
@@ -551,31 +552,41 @@ function CheckoutForm() {
 	useEffect(() => {
 		if (!qrModalOpen || !qrSessionId || !pendingQrOrder) return;
 
-		let active = true;
+		qrCompletedRef.current = false;
+		let transitionTimer: number | undefined;
 
-		const completeQrOrder = async (refNo: string) => {
-			if (!active || qrConfirmedRef) return;
+		const completeQrOrder = (refNo: string) => {
+			if (qrCompletedRef.current) return;
+			qrCompletedRef.current = true;
+			window.clearInterval(pollTimer);
+
 			setQrConfirmedRef(refNo);
-			setTimeout(async () => {
-				if (!active) return;
+			transitionTimer = window.setTimeout(async () => {
 				setQrModalOpen(false);
 				setConfirmedOrder({
 					...pendingQrOrder,
 					cashReadyLabel: `Paid via GCash QR (${refNo})`,
 				});
-				if (!buyNowItems) await clear();
+				if (!buyNowItems) {
+					try {
+						await clear();
+					} catch {
+						// Cart was already cleared by backend during checkout
+					}
+				}
 				window.scrollTo({ top: 0, behavior: "smooth" });
 			}, 800);
 		};
 
 		// A. Cross-device Backend Polling (Phone -> Backend -> Desktop)
 		const pollTimer = window.setInterval(async () => {
+			if (qrCompletedRef.current) return;
 			try {
 				const tracked = await apiFetch<{ status?: string }>(
 					`/Order/track/${encodeURIComponent(pendingQrOrder.orderNumber)}`,
 				);
-				if (tracked?.status === "Paid") {
-					void completeQrOrder(`QR-${pendingQrOrder.orderNumber}`);
+				if (tracked?.status && tracked.status !== "Pending") {
+					completeQrOrder(`QR-${pendingQrOrder.orderNumber}`);
 				}
 			} catch {
 				// Ignore transient polling errors while waiting
@@ -588,7 +599,7 @@ function CheckoutForm() {
 				try {
 					const data = JSON.parse(e.newValue);
 					if (data?.status === "PAID") {
-						void completeQrOrder(
+						completeQrOrder(
 							data.referenceNumber ||
 								`QR-${pendingQrOrder.orderNumber}`,
 						);
@@ -607,7 +618,7 @@ function CheckoutForm() {
 					event.data?.sessionId === qrSessionId &&
 					event.data?.status === "PAID"
 				) {
-					void completeQrOrder(
+					completeQrOrder(
 						event.data.referenceNumber ||
 							`QR-${pendingQrOrder.orderNumber}`,
 					);
@@ -617,19 +628,12 @@ function CheckoutForm() {
 
 		window.addEventListener("storage", onStorage);
 		return () => {
-			active = false;
 			window.clearInterval(pollTimer);
+			if (transitionTimer) window.clearTimeout(transitionTimer);
 			window.removeEventListener("storage", onStorage);
 			bc?.close();
 		};
-	}, [
-		qrModalOpen,
-		qrSessionId,
-		pendingQrOrder,
-		qrConfirmedRef,
-		buyNowItems,
-		clear,
-	]);
+	}, [qrModalOpen, qrSessionId, pendingQrOrder, buyNowItems, clear]);
 
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
