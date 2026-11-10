@@ -213,7 +213,6 @@ function CheckoutForm() {
 	const [pendingQrOrder, setPendingQrOrder] = useState<ConfirmedOrder | null>(
 		null,
 	);
-	const qrCompletedRef = useRef(false);
 
 	const [customCashAmount, setCustomCashAmount] = useState("");
 	const [errors, setErrors] = useState<ValidationErrors>({});
@@ -548,61 +547,62 @@ function CheckoutForm() {
 		],
 	);
 
-	// Listen for QR scan confirmation (both cross-device Backend Polling AND same-device Tab Sync)
+	// ---- QR payment confirmation -------------------------------------------------------------
+	// Two separate effects on purpose:
+	//   1. WAIT   - polls the backend (phone -> backend -> desktop) and listens for the same-device
+	//               tab events. All it does is flip `qrConfirmedRef` from null to a reference.
+	//   2. FINISH - once `qrConfirmedRef` is set, shows "received" for a moment, then opens the
+	//               order confirmation.
+	// The old version did both in one effect, so the pending "go to confirmation" timer was cancelled
+	// by that effect's cleanup whenever ANY dependency (clear, buyNowItems, ...) got a new identity.
+	// Here, FINISH depends only on `qrConfirmedRef`, and it reads everything else through a ref.
+	const qrLatest = useRef({ clear, buyNowItems, pendingQrOrder });
 	useEffect(() => {
-		if (!qrModalOpen || !qrSessionId || !pendingQrOrder) return;
+		qrLatest.current = { clear, buyNowItems, pendingQrOrder };
+	});
 
-		qrCompletedRef.current = false;
-		let transitionTimer: number | undefined;
+	const qrOrderNumber = pendingQrOrder?.orderNumber;
 
-		const completeQrOrder = (refNo: string) => {
-			if (qrCompletedRef.current) return;
-			qrCompletedRef.current = true;
-			window.clearInterval(pollTimer);
+	// 1. WAIT
+	useEffect(() => {
+		if (!qrModalOpen || !qrSessionId || !qrOrderNumber || qrConfirmedRef)
+			return;
 
+		let stopped = false;
+		const complete = (refNo: string) => {
+			if (stopped) return;
+			stopped = true;
 			setQrConfirmedRef(refNo);
-			transitionTimer = window.setTimeout(async () => {
-				setQrModalOpen(false);
-				setConfirmedOrder({
-					...pendingQrOrder,
-					cashReadyLabel: `Paid via GCash QR (${refNo})`,
-				});
-				if (!buyNowItems) {
-					try {
-						await clear();
-					} catch {
-						// Cart was already cleared by backend during checkout
-					}
-				}
-				window.scrollTo({ top: 0, behavior: "smooth" });
-			}, 800);
 		};
 
-		// A. Cross-device Backend Polling (Phone -> Backend -> Desktop)
+		// A. Cross-device: poll the order until the backend says it was paid
 		const pollTimer = window.setInterval(async () => {
-			if (qrCompletedRef.current) return;
+			if (stopped) return;
 			try {
 				const tracked = await apiFetch<{ status?: string }>(
-					`/Order/track/${encodeURIComponent(pendingQrOrder.orderNumber)}`,
+					`/Order/track/${encodeURIComponent(qrOrderNumber)}`,
 				);
-				if (tracked?.status && tracked.status !== "Pending") {
-					completeQrOrder(`QR-${pendingQrOrder.orderNumber}`);
+				// Only paid-or-later counts. Cancelled / Refunded must not look like a successful payment.
+				if (
+					tracked?.status &&
+					["Paid", "Processing", "Shipped", "Delivered"].includes(
+						tracked.status,
+					)
+				) {
+					complete(`QR-${qrOrderNumber}`);
 				}
 			} catch {
 				// Ignore transient polling errors while waiting
 			}
 		}, 2000);
 
-		// B. Same-device LocalStorage / BroadcastChannel fallback
+		// B. Same-device fallback: localStorage + BroadcastChannel from the mock payment tab
 		const onStorage = (e: StorageEvent) => {
 			if (e.key === `snug-qr-paid-${qrSessionId}` && e.newValue) {
 				try {
 					const data = JSON.parse(e.newValue);
 					if (data?.status === "PAID") {
-						completeQrOrder(
-							data.referenceNumber ||
-								`QR-${pendingQrOrder.orderNumber}`,
-						);
+						complete(data.referenceNumber || `QR-${qrOrderNumber}`);
 					}
 				} catch {
 					// ignore parse error
@@ -618,9 +618,8 @@ function CheckoutForm() {
 					event.data?.sessionId === qrSessionId &&
 					event.data?.status === "PAID"
 				) {
-					completeQrOrder(
-						event.data.referenceNumber ||
-							`QR-${pendingQrOrder.orderNumber}`,
+					complete(
+						event.data.referenceNumber || `QR-${qrOrderNumber}`,
 					);
 				}
 			};
@@ -628,12 +627,30 @@ function CheckoutForm() {
 
 		window.addEventListener("storage", onStorage);
 		return () => {
+			stopped = true;
 			window.clearInterval(pollTimer);
-			if (transitionTimer) window.clearTimeout(transitionTimer);
 			window.removeEventListener("storage", onStorage);
 			bc?.close();
 		};
-	}, [qrModalOpen, qrSessionId, pendingQrOrder, buyNowItems, clear]);
+	}, [qrModalOpen, qrSessionId, qrOrderNumber, qrConfirmedRef]);
+
+	// 2. FINISH
+	useEffect(() => {
+		if (!qrConfirmedRef) return;
+		const timer = window.setTimeout(() => {
+			const { clear, buyNowItems, pendingQrOrder } = qrLatest.current;
+			if (!pendingQrOrder) return;
+			setQrModalOpen(false);
+			setConfirmedOrder({
+				...pendingQrOrder,
+				cashReadyLabel: `Paid via GCash QR (${qrConfirmedRef})`,
+			});
+			// The backend already emptied the cart while creating the order; this just syncs the UI
+			if (!buyNowItems) void clear();
+			window.scrollTo({ top: 0, behavior: "smooth" });
+		}, 800);
+		return () => window.clearTimeout(timer);
+	}, [qrConfirmedRef]);
 
 	async function handlePlaceOrder(e: React.FormEvent) {
 		e.preventDefault();
