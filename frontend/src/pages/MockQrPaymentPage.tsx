@@ -25,8 +25,8 @@ export default function MockQrPaymentPage() {
 		setError(null);
 
 		try {
-			// 1. Tell the backend the order is now Paid so the Desktop PC detects it!
-			if (orderId && !orderId.startsWith("ord-")) {
+			// 1. Tell the backend the order is now Paid so the Desktop PC detects it
+			if (orderId && !/^ord-\d+$/.test(orderId)) {
 				await apiFetch("/Payment/process", {
 					method: "POST",
 					body: JSON.stringify({
