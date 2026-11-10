@@ -1,32 +1,49 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { CheckCircle2, ShieldCheck, Smartphone } from "lucide-react";
+import { apiFetch } from "../api/api";
 import { formatPrice } from "../helpers/priceFormat";
 import logoWhite from "../assets/snugrebel_logo_white.svg";
 
 export default function MockQrPaymentPage() {
 	const [searchParams] = useSearchParams();
 	const sessionId = searchParams.get("session") ?? "DEMO-SESSION";
+	const orderId = searchParams.get("orderId") ?? "";
+	const orderNo = searchParams.get("orderNo") ?? "";
 	const amount = Number(searchParams.get("amount") ?? 0);
 	const recipient = searchParams.get("recipient") ?? "Rebel Customer";
 
 	const [processing, setProcessing] = useState(false);
 	const [paid, setPaid] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 	const [refNo] = useState(
 		() => `GC-${Math.floor(100000000 + Math.random() * 900000000)}`,
 	);
 
-	const handleConfirmPayment = () => {
+	const handleConfirmPayment = async () => {
 		setProcessing(true);
-		setTimeout(() => {
+		setError(null);
+
+		try {
+			// 1. Tell the backend the order is now Paid so the Desktop PC detects it!
+			if (orderId && !orderId.startsWith("ord-")) {
+				await apiFetch("/Payment/process", {
+					method: "POST",
+					body: JSON.stringify({
+						orderId,
+						method: 2, // 2 = PaymentMethod.Gcash on backend
+						providerReference: refNo,
+					}),
+				});
+			}
+
+			// 2. Also fire local storage / BroadcastChannel for same-device tab testing
 			const payload = {
 				sessionId,
 				status: "PAID",
 				referenceNumber: refNo,
 				paidAt: new Date().toISOString(),
 			};
-
-			// Notify the Checkout page tab via localStorage + BroadcastChannel
 			localStorage.setItem(
 				`snug-qr-paid-${sessionId}`,
 				JSON.stringify(payload),
@@ -37,9 +54,16 @@ export default function MockQrPaymentPage() {
 				bc.close();
 			}
 
-			setProcessing(false);
 			setPaid(true);
-		}, 1200);
+		} catch (err) {
+			setError(
+				err instanceof Error
+					? err.message
+					: "Could not reach the server from your phone. Make sure both devices are on the same network/server.",
+			);
+		} finally {
+			setProcessing(false);
+		}
 	};
 
 	return (
@@ -81,6 +105,14 @@ export default function MockQrPaymentPage() {
 								</span>
 								<span className="font-bold">SNUG REBEL PH</span>
 							</div>
+							{orderNo && (
+								<div className="flex justify-between">
+									<span className="text-neutral-500">
+										ORDER NO.
+									</span>
+									<span className="font-bold">{orderNo}</span>
+								</div>
+							)}
 							<div className="flex justify-between">
 								<span className="text-neutral-500">
 									AMOUNT PAID
@@ -98,18 +130,9 @@ export default function MockQrPaymentPage() {
 						</div>
 
 						<p className="text-xs text-neutral-600 leading-relaxed">
-							Your checkout tab has been notified and will
-							automatically redirect to your Order Confirmation.
-							You may now close this window.
+							Your desktop checkout screen has been notified and
+							will automatically display your Order Confirmation!
 						</p>
-
-						<button
-							type="button"
-							onClick={() => window.close()}
-							className="w-full py-3 bg-[#141414] text-white font-display font-black uppercase tracking-wider hover:bg-[#e50914] transition-colors cursor-pointer"
-						>
-							CLOSE WINDOW
-						</button>
 					</div>
 				) : (
 					<div className="space-y-6">
@@ -146,11 +169,18 @@ export default function MockQrPaymentPage() {
 								<span className="text-neutral-500 uppercase">
 									Reference ID
 								</span>
-								<span className="font-mono text-[11px]">
-									QR-TXN-{sessionId.slice(-6).toUpperCase()}
+								<span className="font-mono text-[11px] font-bold tracking-wider text-[#e50914]">
+									{orderNo ||
+										`QR-TXN-${sessionId.slice(-6).toUpperCase()}`}
 								</span>
 							</div>
 						</div>
+
+						{error && (
+							<div className="border-2 border-[#e50914] bg-red-50 p-3 text-xs font-bold text-[#e50914]">
+								{error}
+							</div>
+						)}
 
 						<div className="flex items-center gap-2 text-[11px] text-neutral-600 bg-neutral-200/70 px-3 py-2 border-l-4 border-[#141414]">
 							<ShieldCheck size={18} className="shrink-0" />
